@@ -1358,6 +1358,10 @@ changed stays open when its changes have gone."
                    "<remap> <undo>" "<remap> <undo-ignore-read-only>"))
       (define-key map (kbd key) #'ecc-review-read-only))
     map)
+  ;; The keys in the last paragraph are written out, not \\[...]: it is
+  ;; about those keys -- which ones the manual reserves and which ones
+  ;; `diff-mode' already has -- and a rebinding does not change that.
+  ;; checkdoc reports the second chord of `C-c C-c' all the same.
   "Keymap of `ecc-review-mode\='.
 The buffer is read-only, so a letter is free to be a command, and these
 come before `diff-mode-shared-map\=' and `diff-mode-read-only-map\='.
@@ -3646,9 +3650,10 @@ As the deny of the proposal REVIEW is of, if it is one, and REVIEW is
 closed; otherwise REVIEW stays open, those comments marked sent
 \(`ecc-review--after-send').  With EDIT the text is opened in a buffer
 of its own first, to be read over and changed before it goes, and
-\\`C-c C-k\=' there goes back to REVIEW.  SENT, a function of no argument,
-settles what TEXT was made from once it has gone, in place of settling
-REVIEW alone.  Return TEXT when it was sent."
+\\<ecc-review-message-mode-map>\\[ecc-review-message-cancel] there
+goes back to REVIEW.  SENT, a function of no argument, settles what TEXT
+was made from once it has gone, in place of settling REVIEW alone.
+Return TEXT when it was sent."
   (let ((request (buffer-local-value 'ecc-review--request review))
         (notes (with-current-buffer review (ecc-review--unsent-notes))))
     (if (not edit)
@@ -4254,7 +4259,7 @@ project has none; nothing is started here.  `ecc-review-range\=' and
   (let* ((buffer-session (ecc-window-buffer-session))
          (directory (if buffer-session
                         (ecc-window-session-project buffer-session)
-                      (ecc-window-context-project-root))))
+                      (ecc-context-project-root))))
     (cons (or buffer-session (car (ecc-window-project-sessions directory)))
           (and directory (file-name-as-directory (expand-file-name directory))))))
 

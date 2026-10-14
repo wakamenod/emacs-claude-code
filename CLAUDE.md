@@ -28,9 +28,14 @@ session, and `ecc-transient.el` the menu. The boundaries that are rules:
   The prompt region lives after `ecc-render--prompt-start` in the same buffer, and no
   redraw deletes past it.
 - `ecc-window.el` does not require `ecc-space.el`: the Spaces are built on top of the
-  windows, not inside them. `ecc-window.el` branches on `ecc-use-spaces` at the head of
-  the four functions that care and loads `ecc-space` at run time, and with that setting
-  off nothing reaches `ecc-worktree.el`, `ecc-space.el` or `ecc-sidebar.el`.
+  windows, not inside them. What depends on the layout is a generic function of
+  `ecc-window.el` dispatching on `ecc-window--layout`, with the `classic` answer as its
+  default, and `ecc-space.el` specialises it on `spaces`; with that setting off nothing
+  reaches `ecc-worktree.el`, `ecc-space.el` or `ecc-sidebar.el`. A method of
+  `ecc-space.el` exists only once it is loaded, so a command that can reach one of those
+  generic functions before a session exists loads the whole package first: autoloaded
+  from `ecc` when it is defined in `ecc-window.el`, through `ecc--require-package`
+  otherwise.
 
 Each script in `scripts/` says in its own header what it is and how to run it. Run
 `scripts/bench-render.el` before and after touching the renderer. The documentation site

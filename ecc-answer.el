@@ -317,7 +317,7 @@ one key whose command differs: here it resumes at once, with the fork in
 the prefix argument, while in the menu it opens `ecc-resume-menu', where
 the fork is a switch.  The meaning is the same; only the form differs.")
 
-(fset 'ecc-global-map ecc-global-map)
+(defalias 'ecc-global-map ecc-global-map)
 
 ;;;; The mode line indicator
 

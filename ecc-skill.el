@@ -399,7 +399,7 @@ and what was read last is better than nothing."
 
 (defun ecc-skill-settings-file-in (&optional root)
   "Return the file a skill of the project at ROOT is turned on and off in.
-`.claude/settings.local.json' of that project unless
+`.claude/settings.local.json' of that project unless the variable
 `ecc-skill-settings-file' names another, because that is where the
 terminal client saves: all three of its own write sites -- the two of
 the plugin screen and the one of /skills -- write the localSettings
@@ -537,8 +537,8 @@ meant to write."
 (defun ecc-skill-set-override (session name value &optional file)
   "Set the skill NAME of SESSION to VALUE, and say so.
 VALUE nil puts the skill back to the default.  FILE is the settings
-file to write; `ecc-skill-settings-file' decides when it is not given.
-The session is sent /reload-skills afterwards unless
+file to write; the function `ecc-skill-settings-file' decides when it
+is not given.  The session is sent /reload-skills afterwards unless
 `ecc-skill-reload-after-toggle' says not to, and the settings are read
 again, so that what is shown is what the CLI has rather than what Emacs
 meant to write."

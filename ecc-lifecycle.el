@@ -42,11 +42,13 @@
 ;;
 ;; A session wants the whole package -- the MCP tools, the hints, the
 ;; notifications -- and some of it is registered when its file is
-;; loaded, so it has to be there before the CLI starts.  The autoload of
-;; `ecc-start' loads this file alone, and so does that of any command
-;; above it that starts a session, which is why every way into a session
-;; loads `ecc' first (`ecc--require-package').  The few functions of the
-;; modules above that are called here are the ones that loading brings.
+;; loaded, so it has to be there before the CLI starts.  A session
+;; buffer wants it too: the modules above `ecc-chat' give it its keys.
+;; The autoload of `ecc-start' loads this file alone, and so does that of
+;; any command above it that starts a session, which is why every way
+;; into a session, and every session buffer, loads `ecc' first
+;; (`ecc--require-package').  The few functions of the modules above that
+;; are called here are the ones that loading brings.
 
 ;;; Code:
 
@@ -72,17 +74,33 @@
 (declare-function ecc-tab-line-mode "ecc-notify" (&optional arg))
 
 (defun ecc--require-package ()
-  "Load the whole of ecc, as a session is about to be opened.
+  "Load the whole of ecc, as a session or its buffer is about to be made.
 The features that register themselves when they are loaded -- the MCP
 tools, among them, which a CLI lists once when it starts -- are only
-there for a session that was opened with them loaded.  `ecc' is what
-requires every one of them, and it requires this file in turn, so it
-is loaded here at run time rather than at the top."
+there for a session that was opened with them loaded.  A session buffer
+gets its keys, its completion and its part of the mode line from the
+modules above `ecc-chat', which it cannot load itself: they require it.
+`ecc' is what requires every one of them, and it requires this file in
+turn, so it is loaded here at run time rather than at the top.  Every
+command that loads the package on its way in -- a menu, a restore, a
+worktree handed over -- calls this, so that the `require' of `ecc' is
+written once."
   (require 'ecc))
 
 (defun ecc-project-root ()
   "Return the root of the project of the current buffer, or its directory."
   (ecc-window-project-root))
+
+(defun ecc-context-project-root ()
+  "Return the project a command should act in, the package loaded first.
+It is `ecc-window-context-project-root', which under `spaces' counts
+the tab showing as the user's choice of project -- and which tab is a
+Space only `ecc-space' knows.  A tab can be one before anything of ecc
+has run, `desktop-save-mode' putting back the tabs of a frame and its
+parameters, so a command that asks this before it has made a session
+loads the package to ask it."
+  (ecc--require-package)
+  (ecc-window-context-project-root))
 
 (defun ecc--enable-session-modes ()
   "Turn on the global modes every session wants.
@@ -138,7 +156,7 @@ reach it.  The directory comes from the buffer the user is working in
 rather than from whichever buffer happens to be current: `ecc-start\=' is
 run from a transcript, the dashboard or the scratch buffer as often as
 from a file, and none of those says which project was meant."
-  (let ((root (ecc-window-context-project-root)))
+  (let ((root (ecc-context-project-root)))
     (if current-prefix-arg
         (list (read-directory-name "Directory: " root)
               (read-string "Session name: "))
@@ -161,10 +179,11 @@ Interactively, the session of the current buffer is resumed when it has
 stopped -- that is the R offered after an exit -- and a choice is asked
 for otherwise.  A prefix argument forks it into a new conversation.
 
-\\`C-c c r\=' runs this directly, and \\`C-u C-c c r\=' forks: the prompt then
-says Fork rather than Resume, so that what is about to happen is in the
-minibuffer where the choice is made.  `ecc-menu\=' keeps `ecc-resume-menu\='
-under r, where the fork is a switch seen before it is pressed."
+\\<global-map>\\[ecc-resume] runs this directly, and \\`C-u' \\[ecc-resume]
+forks: the prompt then says Fork rather than Resume, so that what is
+about to happen is in the minibuffer where the choice is made.
+`ecc-menu\=' keeps `ecc-resume-menu\=' under r, where the fork is a
+switch seen before it is pressed."
   ;; The one path with no prompt to say Fork in: `ecc-read-session'
   ;; returns the stopped session of the current buffer without asking,
   ;; so `C-u' there forks in silence.  A fork opens as a new session, so

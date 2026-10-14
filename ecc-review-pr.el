@@ -845,8 +845,8 @@ when it never has been (`ecc-review-pr--count')."
   "Return what this review says of the pull request it is a part of.
 Which commit it is, out of how many -- with its SUBJECT when asked
 for -- or that it is the whole, and how many comments of yours not sent
-yet the other reviews of the pull request hold, which \\`C-c C-a\=' sends
-with these.
+yet the other reviews of the pull request hold, which
+\\<ecc-review-mode-map>\\[ecc-review-pr-send-all] sends with these.
 Read off what is kept (`ecc-review-pr--count'): this is drawn with
 every redisplay of the header line."
   (let* ((walk ecc-review--walk)

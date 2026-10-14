@@ -157,6 +157,11 @@ call the session NAME (`ecc-session-rename\=')."
   "Return the buffer of SESSION, creating and drawing it if needed."
   (let ((buffer (ecc-session-buffer session)))
     (unless (buffer-live-p buffer)
+      ;; The modules above `ecc-chat' give the buffer its keys, its
+      ;; completion and its part of the mode line, and not every way here
+      ;; has loaded them: a recording opened from a cold Emacs comes
+      ;; through `ecc-history' alone.
+      (ecc--require-package)
       (setq buffer (get-buffer-create
                     (ecc-session-buffer-name (ecc-session-name session))))
       (setf (ecc-session-buffer session) buffer)

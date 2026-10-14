@@ -24,10 +24,19 @@
 ;; `ecc-worktree' are in place once their own module is loaded, with
 ;; nothing waiting for another to load; and `ecc-proc' alone names the
 ;; MCP server on the command line.
+;;
+;; The last four are about `ecc-window' and the Spaces above it:
+;; `ecc-window' calls into no module that requires it beyond the buffer
+;; of a session; and a recording opened under `spaces', a project focused
+;; and a command that asks which project it is in all reach the Space,
+;; which is a method there only once `ecc-space' has been loaded.
 
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
+(require 'seq)
+(require 'ecc-test-helpers)
 
 (defun ecc-load-test--probe (dir)
   "Return the form that loads every file of ecc in DIR and prints the hooks.
@@ -96,10 +105,11 @@ printed and read back, so it must have a printed representation."
   "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
 The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
 `ecc-queue', `ecc-hint', `ecc-tui' and `ecc-transient' give them their
-keys; `ecc-chat-mode' loads them all.  Most of the ways to a buffer -- a
-recording read back, the terminal, an answer from anywhere, a Space --
-load `ecc-session' and never `ecc-prompt' or `ecc-transient', so without
-that a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
+keys; `ecc-session-ensure-buffer' loads the whole package before it
+makes the buffer.  Most of the ways to a buffer -- a recording read
+back, the terminal, an answer from anywhere, a Space -- load
+`ecc-session' and never `ecc-prompt' or `ecc-transient', so without that
+a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
 required as that entry point would be, and the buffer is made the way
 every path makes one: `ecc-session' required at run time and
 `ecc-session-ensure-buffer' called."
@@ -130,6 +140,30 @@ every path makes one: `ecc-session' required at run time and
                          #'ecc-prompt-capf #'ecc-queue-show
                          #'ecc-hint-accept-suggestion #'ecc-menu
                          #'ecc-tui-open #'ecc-menu t)))))
+
+;; The test above makes the buffer the way every path does; this one
+;; takes the one path that loads no more than `ecc-session' on its own,
+;; from the autoload on.
+(ert-deftest ecc-load-test-recording-opened-cold-has-module-keys ()
+  "A recording opened in an Emacs that has loaded nothing of ecc has its keys.
+`ecc-history-open' is autoloaded from `ecc-history', which loads
+`ecc-session' and none of the modules above `ecc-chat'; the buffer it
+makes still has \\`C-c C-c' and \\`?', since making it loads the package."
+  (let ((file (ecc-test-history-fixture "session")))
+    (should (equal (ecc-load-test--run
+                    `(progn
+                       (load "ecc-autoloads" nil t)
+                       (let ((id (file-name-base ,file)))
+                         ;; Where the recording is: the one thing a cold
+                         ;; Emacs is not told by the autoload.
+                         (require 'ecc-history)
+                         (puthash id ,file ecc-history--files)
+                         (with-current-buffer
+                             (ecc-session-buffer (ecc-history-open id))
+                           (list (featurep 'ecc)
+                                 (key-binding (kbd "C-c C-c"))
+                                 (lookup-key ecc-chat-transcript-map (kbd "?")))))))
+                   (list t #'ecc-prompt-send #'ecc-menu)))))
 
 (ert-deftest ecc-load-test-user-bindings-survive-the-modules ()
   "A key a user binds once `ecc-chat' is loaded keeps its binding.
@@ -368,6 +402,171 @@ started."
                                         t)))
                          (ecc-mcp-stop)))))
                  '(nil nil nil t))))
+
+;;;; What ecc-window reaches up to
+
+(defun ecc-load-test--references (file)
+  "Return (TOP . INNER) for the forms of FILE.
+TOP is the features of ecc FILE requires at top level.  INNER is every
+other reference to a module of ecc in it: (require FEATURE FEATURE) for
+a `require' inside a form, and (declare FUNCTION FEATURE) for a
+`declare-function'."
+  (let ((top nil)
+        (inner nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (cl-labels ((ecc-feature (form)
+                    (and (eq (car-safe form) 'quote)
+                         (symbolp (cadr form))
+                         (string-prefix-p "ecc" (symbol-name (cadr form)))
+                         (cadr form)))
+                  (walk (form)
+                    (when (consp form)
+                      (pcase form
+                        (`(require ,feature . ,_)
+                         (when-let* ((feature (ecc-feature feature)))
+                           (push (list 'require feature feature) inner)))
+                        (`(declare-function ,function ,(and (pred stringp) file) . ,_)
+                         (when (string-prefix-p "ecc" file)
+                           (push (list 'declare function (intern file)) inner))))
+                      (while (consp form)
+                        (walk (car form))
+                        (setq form (cdr form))))))
+        (condition-case nil
+            (while t
+              (let ((form (read (current-buffer))))
+                (if-let* (((eq (car-safe form) 'require))
+                          (feature (ecc-feature (cadr form))))
+                    (push feature top)
+                  (walk form))))
+          (end-of-file nil))))
+    (cons top inner)))
+
+(defun ecc-load-test--upward (feature)
+  "Return the references of FEATURE to a module that requires it.
+A module that requires FEATURE, however indirectly, is above it, and a
+`declare-function' or a `require' inside a function that names one is
+a call into what loads FEATURE: the two files call each other."
+  (let* ((dir (file-name-directory (locate-library "ecc.el" t)))
+         (modules (mapcar (lambda (file)
+                            (cons (intern (file-name-base file))
+                                  (ecc-load-test--references
+                                   (expand-file-name file dir))))
+                          (seq-remove (lambda (file)
+                                        (equal file "ecc-autoloads.el"))
+                                      (directory-files dir nil "\\`ecc.*\\.el\\'"))))
+         (above (lambda (target)
+                  ;; Whether TARGET requires FEATURE, however indirectly.
+                  (let ((seen nil)
+                        (queue (list target)))
+                    (while queue
+                      (let ((module (pop queue)))
+                        (unless (memq module seen)
+                          (push module seen)
+                          (setq queue (append (car (alist-get module modules))
+                                              queue)))))
+                    (and (memq feature (delq target seen)) t)))))
+    (sort (seq-filter (lambda (reference) (funcall above (nth 2 reference)))
+                      (cdr (alist-get feature modules)))
+          (lambda (a b) (string< (prin1-to-string a) (prin1-to-string b))))))
+
+(ert-deftest ecc-load-test-window-reaches-up-to-no-space ()
+  "`ecc-window' calls into nothing above it but the buffer of a session.
+The Spaces are built on top of the windows: what differs under them is a
+generic function of `ecc-window' that `ecc-space' specialises, and no
+`declare-function' or `require' of `ecc-window' names `ecc-space' or any
+other module that requires it.  What is left is the buffer a session is
+shown in and its prompt, which `ecc-session' and `ecc-chat' make; a
+reference added here fails this, and one taken away is struck off."
+  (should (equal (ecc-load-test--upward 'ecc-window)
+                 '((declare ecc-chat-goto-prompt ecc-chat)
+                   (declare ecc-session-ensure-buffer ecc-session)
+                   (require ecc-session ecc-session)
+                   (require ecc-session ecc-session)
+                   (require ecc-session ecc-session)))))
+
+(ert-deftest ecc-load-test-spaces-reached-from-a-recording ()
+  "A recording opened under `spaces' is shown in a Space, in an Emacs of its own.
+`ecc-window' loads nothing of `ecc-space': the Space is a method that is
+there once `ecc-space' is loaded, and before that the `classic' answer
+is the one given.  So whatever shows a session has to have loaded it,
+or a session under `spaces' lands in a window role with no word said.
+`ecc-history-open' is a way in that starts no CLI, and its autoload
+loads `ecc-history' and nothing above it."
+  (let ((fixture (ecc-test-history-fixture "session")))
+    (should (equal (ecc-load-test--run
+                    `(let* ((root (make-temp-file "ecc-load-history" t))
+                            (project (expand-file-name "-tmp-project" root))
+                            (id "24a1aa86-d53f-4457-b09e-4f4caf450f03"))
+                       (unwind-protect
+                           (progn
+                             (make-directory project t)
+                             (copy-file ,fixture (expand-file-name
+                                                  (concat id ".jsonl") project))
+                             (require 'ecc-history)
+                             (setq ecc-history-directory root
+                                   ecc-use-spaces t)
+                             (ecc-history-open id)
+                             (list (featurep 'ecc-space)
+                                   (and (frame-parameter nil 'ecc-space-tabs) t)))
+                         (delete-directory root t))))
+                   '(t t)))))
+
+(ert-deftest ecc-load-test-focus-project-cold-reaches-the-space ()
+  "A project focused in an Emacs that has loaded nothing of ecc gets its Space.
+`ecc-focus-project' is defined in `ecc-window', which loads nothing of
+`ecc-space', and under `spaces' the answer is a method of `ecc-space':
+an autoload that loaded `ecc-window' alone gave the `classic' one, which
+refuses a project with no session.  Its autoload loads the package."
+  (should (equal (ecc-load-test--run
+                  `(let ((root (file-name-as-directory
+                                (make-temp-file "ecc-load-focus" t))))
+                     (unwind-protect
+                         (progn
+                           (load "ecc-autoloads" nil t)
+                           ;; A Space with nothing running starts a CLI.
+                           (setq ecc-use-spaces t
+                                 ecc-space-always-session nil)
+                           (list (condition-case error
+                                     (progn (ecc-focus-project root) 'ok)
+                                   (error error))
+                                 (featurep 'ecc-space)
+                                 (length (tab-bar-tabs))))
+                       (delete-directory root t))))
+                 '(ok t 2))))
+
+(ert-deftest ecc-load-test-context-root-cold-reads-the-space ()
+  "A command that asks which project it is in counts the Space showing, cold.
+Under `spaces' the tab showing is the second answer, after the buffer in
+front of the user, and the Space of a tab is known to `ecc-space' alone.
+A tab can be a Space before `ecc-space' is loaded -- `desktop-save-mode'
+puts back the tabs of a frame and its parameters -- so the commands that
+start a session, the worktree ones and the review of a range load the
+package before they ask.  Each reader runs in an Emacs of its own: once
+one has loaded the package the others would have it too."
+  (dolist (case '((ecc-lifecycle (car (ecc-start--read-arguments)))
+                  (ecc-worktree (ecc-worktree-context-root))
+                  (ecc-review (cdr (ecc-review-context)))))
+    (should (equal (ecc-load-test--run
+                    `(let ((root (file-name-as-directory
+                                  (make-temp-file "ecc-load-context" t))))
+                       (unwind-protect
+                           (progn
+                             (load "ecc-autoloads" nil t)
+                             (require ',(car case))
+                             (setq ecc-use-spaces t)
+                             ;; A Space tab as a restored desktop leaves it.
+                             (let ((key (ecc-window-project-key root)))
+                               (tab-bar-new-tab)
+                               (tab-bar-rename-tab "restored")
+                               (set-frame-parameter
+                                nil 'ecc-space-tabs (list (cons key "restored")))
+                               (list ',(car case)
+                                     (equal ,(cadr case) key)
+                                     (featurep 'ecc-space))))
+                         (delete-directory root t))))
+                   (list (car case) t t)))))
 
 (provide 'ecc-load-test)
 
