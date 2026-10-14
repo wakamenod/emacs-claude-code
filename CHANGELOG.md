@@ -17,6 +17,19 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Changed
 
+- `ecc-chat-mode` no longer loads the modules above `ecc-chat.el`, which
+  0.4.4 had it do so that every chat buffer had their keys. What makes a
+  session buffer, `ecc-session-ensure-buffer`, loads the whole package
+  before it makes one, as starting a session already did, so the keys,
+  the prompt's completion and the hint in the mode line are there by
+  whatever way the buffer came. A recording opened with `ecc-history-open`
+  or `ecc-search` in an Emacs that had loaded nothing of ecc therefore
+  loads all of it now, rather than the modules the mode named. The
+  commands that load the package on their way in -- the menus, the review
+  menu, `ecc-restore` and the worktree hand-off -- all do it through
+  `ecc--require-package` now, which leaves one `(require 'ecc)` in the
+  package; `ecc-transient--load` is gone.
+
 - `ecc-window` no longer calls into `ecc-space`. What depends on the layout
   -- the project the tab showing stands for, the title a group of sessions
   goes by in the session picker, where a session or a buffer beside it is
@@ -26,11 +39,11 @@ Verified against **Claude Code CLI 2.1.290**.
   `spaces`. Seven `declare-function`s and five run-time requires of
   `ecc-space` are gone from `ecc-window`, and so is a `(require 'ecc-render)`
   in `ecc-window-read-project` that nothing had used since the name of a
-  project moved into `ecc-window-project-name`. Nothing a user sees changes,
-  with one condition: a Space is a method that exists once `ecc-space` is
-  loaded, so whatever shows a session under `ecc-use-spaces` has to have
-  loaded it, and a test opens a recording in an Emacs of its own to check
-  that it lands in a Space. Another fails when `ecc-window` gains a
+  project moved into `ecc-window-project-name`. Nothing a user sees changes.
+  A Space is a method that exists once `ecc-space` is loaded, which
+  `ecc-session-ensure-buffer` sees to by loading the whole package before
+  a session buffer is made; a test opens a recording in an Emacs of its own
+  to check that it lands in a Space. Another fails when `ecc-window` gains a
   `declare-function` or a run-time `require` of a module that requires it.
 
 ### Fixed

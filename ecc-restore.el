@@ -425,7 +425,7 @@ nil only the sessions come back.
 FILE is the state to read, `ecc-restore-file' by default.  To do this
 every time Emacs starts, call it from the init file."
   (interactive)
-  (require 'ecc)
+  (ecc--require-package)
   (let* ((state (or (and (null file) (ecc-restore--previous-state))
                     (ecc-restore--read file)))
          (restored nil)
