@@ -318,14 +318,8 @@ row.  TAB folds, on this row as on every other.")
   :interactive nil
   ;; The modules above this one give the keymaps above their keys, and
   ;; the prompt region and the mode line their parts from
-  ;; `ecc-chat-mode-hook', so they are loaded before the buffer is used,
-  ;; whichever command made it.  At run time: they all require this file.
-  (require 'ecc-prompt)
-  (require 'ecc-session)
-  (require 'ecc-queue)
-  (require 'ecc-hint)
-  (require 'ecc-tui)
-  (require 'ecc-transient)
+  ;; `ecc-chat-mode-hook'.  What makes a session buffer loads them first
+  ;; (`ecc-session-ensure-buffer').
   ;; Faces are applied when text is inserted, so no font lock is
   ;; wanted; `text-mode' turns none on.
   ;; The buffer is wrapped prose, so a line on the screen is the line a

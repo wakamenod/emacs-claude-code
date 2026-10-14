@@ -66,12 +66,9 @@
 ;; and nothing requires `ecc' itself, because `ecc' requires this file.  A
 ;; menu opened from a cold Emacs therefore ran into a suffix whose command
 ;; was void -- `C-c c r r' found `ecc-read-session' undefined (2026-09-13).
-;; The require is made when a menu is opened instead, which is the one
-;; moment every suffix behind it has to be there.
-
-(defun ecc-transient--load ()
-  "Load the whole package, which the suffixes of the menus are spread over."
-  (require 'ecc))
+;; The package is loaded when a menu is opened instead
+;; (`ecc--require-package'), which is the one moment every suffix behind
+;; it has to be there.
 
 ;;;; Commands the menu needs of its own
 
@@ -286,7 +283,7 @@ same suffix from one call to the next."
   ["Other"
    ("/" "Choose with completion" ecc-slash-command)]
   (interactive)
-  (ecc-transient--load)
+  (ecc--require-package)
   (transient-setup 'ecc-slash-menu))
 
 (transient-define-suffix ecc-menu-allow-all (args)
@@ -330,7 +327,7 @@ it too."
    ("-f" "Fork the conversation" "--fork")
    ("r" ecc-menu-resume)]
   (interactive)
-  (ecc-transient--load)
+  (ecc--require-package)
   (transient-setup 'ecc-resume-menu))
 
 ;;;###autoload (autoload 'ecc-worktree-menu "ecc-transient" nil t)
@@ -412,7 +409,7 @@ before it draws anything."
     ("K" "Copy the remote URL" ecc-remote-control-copy-url)
     ("I" "Inline images" ecc-image-toggle-inline)]]
   (interactive)
-  (ecc-transient--load)
+  (ecc--require-package)
   (transient-setup 'ecc-menu))
 
 ;;;; The keys of a chat buffer

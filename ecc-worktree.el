@@ -691,7 +691,7 @@ rather than gone to, which is what `ecc-start-worktree\=' does when a
 person asked for it: two sessions in one worktree is not what handing a
 piece of work over means, and the caller -- a model naming a branch of
 its own -- can name another one."
-  (require 'ecc)
+  (ecc--require-package)
   (let* ((asked (ecc-worktree--key root))
          (root (or (ecc-worktree-main asked) asked))
          (branch (string-trim (or branch "")))

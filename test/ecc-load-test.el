@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'ecc-test-helpers)
 
 (defun ecc-load-test--probe (dir)
   "Return the form that loads every file of ecc in DIR and prints the hooks.
@@ -96,10 +97,11 @@ printed and read back, so it must have a printed representation."
   "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
 The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
 `ecc-queue', `ecc-hint', `ecc-tui' and `ecc-transient' give them their
-keys; `ecc-chat-mode' loads them all.  Most of the ways to a buffer -- a
-recording read back, the terminal, an answer from anywhere, a Space --
-load `ecc-session' and never `ecc-prompt' or `ecc-transient', so without
-that a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
+keys; `ecc-session-ensure-buffer' loads the whole package before it
+makes the buffer.  Most of the ways to a buffer -- a recording read
+back, the terminal, an answer from anywhere, a Space -- load
+`ecc-session' and never `ecc-prompt' or `ecc-transient', so without that
+a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
 required as that entry point would be, and the buffer is made the way
 every path makes one: `ecc-session' required at run time and
 `ecc-session-ensure-buffer' called."
@@ -130,6 +132,30 @@ every path makes one: `ecc-session' required at run time and
                          #'ecc-prompt-capf #'ecc-queue-show
                          #'ecc-hint-accept-suggestion #'ecc-menu
                          #'ecc-tui-open #'ecc-menu t)))))
+
+;; The test above makes the buffer the way every path does; this one
+;; takes the one path that loads no more than `ecc-session' on its own,
+;; from the autoload on.
+(ert-deftest ecc-load-test-recording-opened-cold-has-module-keys ()
+  "A recording opened in an Emacs that has loaded nothing of ecc has its keys.
+`ecc-history-open' is autoloaded from `ecc-history', which loads
+`ecc-session' and none of the modules above `ecc-chat'; the buffer it
+makes still has \\`C-c C-c' and \\`?', since making it loads the package."
+  (let ((file (ecc-test-history-fixture "session")))
+    (should (equal (ecc-load-test--run
+                    `(progn
+                       (load "ecc-autoloads" nil t)
+                       (let ((id (file-name-base ,file)))
+                         ;; Where the recording is: the one thing a cold
+                         ;; Emacs is not told by the autoload.
+                         (require 'ecc-history)
+                         (puthash id ,file ecc-history--files)
+                         (with-current-buffer
+                             (ecc-session-buffer (ecc-history-open id))
+                           (list (featurep 'ecc)
+                                 (key-binding (kbd "C-c C-c"))
+                                 (lookup-key ecc-chat-transcript-map (kbd "?")))))))
+                   (list t #'ecc-prompt-send #'ecc-menu)))))
 
 (ert-deftest ecc-load-test-user-bindings-survive-the-modules ()
   "A key a user binds once `ecc-chat' is loaded keeps its binding.
