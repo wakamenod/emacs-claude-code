@@ -25,9 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # Not upstream's 3.10: its `datetime.fromisoformat' refuses the `Z'
+      # of GitHub's timestamps, and melpazoid then skips the check on how
+      # old the repository is, printing "Created: N/A".
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       # The Emacs installed here only evaluates recipes for melpazoid.py;
       # the checks themselves run in the Emacs the Docker image builds.
