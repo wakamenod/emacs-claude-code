@@ -379,10 +379,10 @@ order the files were written out, and STATUS is that of
 `ecc-review-ediff-pairs\='.  Buffer-local in the ediff control buffer.")
 
 (defvar-local ecc-review-ediff--cache nil
-  "What this review read and coloured, by blob; see `ecc-review-ediff--blob-text\='.
+  "What this review read and coloured, by blob.
 Under (raw . BLOB) the text of a blob, and under (face BLOB PATH FONTIFY)
-that text fontified as PATH.  Kept in the control buffer, pruned to the
-blobs of the review on every reading.")
+that text fontified as PATH; see `ecc-review-ediff--blob-text\='.  Kept in
+the control buffer, pruned to the blobs of the review on every reading.")
 
 (defvar-local ecc-review-ediff--buffers nil
   "The (BASE . NOW) buffers this control buffer compares.")

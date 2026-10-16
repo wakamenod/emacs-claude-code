@@ -1,0 +1,70 @@
+name: melpazoid
+
+# melpazoid <https://github.com/riscy/melpazoid> is what MELPA's reviewer
+# runs on a recipe pull request.  Running it here shows its report before
+# the reviewer does.  Triggered like test.yml, for the same reason.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  melpazoid:
+    # melpazoid clones the branch from this repository (see CI_BRANCH), so
+    # a pull request from a fork has no branch here to clone.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        # 31.1 is what upstream's Dockerfile builds, and what the reviewer's
+        # reports name.  29.1 is the minimum the package claims.
+        emacs_version: ['31.1', '29.1']
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Not upstream's 3.10: its `datetime.fromisoformat' refuses the `Z'
+      # of GitHub's timestamps, and melpazoid then skips the check on how
+      # old the repository is, printing "Created: N/A".
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # The Emacs installed here only evaluates recipes for melpazoid.py;
+      # the checks themselves run in the Emacs the Docker image builds.
+      # Upstream master is tracked because that is what the reviewer runs;
+      # the commit is printed so that a change in the findings can be traced.
+      - name: install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y emacs-nox
+          git clone --depth 1 https://github.com/riscy/melpazoid.git ~/melpazoid
+          echo "melpazoid $(git -C ~/melpazoid log -1 --format='%h %ad %s' --date=short)"
+
+      # The Dockerfile fixes the version in an ENV line rather than taking a
+      # build argument, so another version means rewriting that line.
+      - name: select Emacs ${{ matrix.emacs_version }}
+        run: |
+          sed -i 's/^ENV EMACS_VERSION=.*/ENV EMACS_VERSION=${{ matrix.emacs_version }}/' \
+            ~/melpazoid/docker/Dockerfile
+          grep '^ENV EMACS_VERSION=${{ matrix.emacs_version }}$' ~/melpazoid/docker/Dockerfile
+
+      # LOCAL_REPO is left unset, unlike upstream's template: since upstream
+      # d7e253d (2026-09-07) a local repository skips the containerised build
+      # -- byte-compile, checkdoc, package-lint, check-declare, the load test
+      # -- and leaves only the Python checks.  Without it melpazoid clones the
+      # recipe's repository, as it does for the reviewer, at CI_BRANCH:
+      # GITHUB_REF would give it `merge' on a pull request, and only the last
+      # part of a branch name with a slash in it.
+      - name: run
+        env:
+          RECIPE: (ecc :fetcher github :repo "wakamenod/emacs-claude-code")
+          CI_BRANCH: ${{ github.head_ref || github.ref_name }}
+          # Warnings are reported and do not fail the job; errors do.
+          WARN_IS_ERROR: false
+          # Set this to true once recipes/ecc is merged into melpa, or the
+          # name check will report our own package as a collision.
+          EXIST_OK: false
+        run: make -C ~/melpazoid

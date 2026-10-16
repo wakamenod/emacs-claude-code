@@ -11,6 +11,22 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- The `declare-function` forms pass `check-declare` on Emacs 29.1 and in an
+  Emacs installed without its C sources, which is what MELPA's checks run
+  in: melpazoid builds Emacs and then deletes the source. The six
+  tree-sitter primitives that 0.4.4 declared in `treesit.c` are declared in
+  `treesit.el` with FILEONLY, since the C file is not there to look in.
+  `flymake-diagnostic-text` is declared with FILEONLY too, as 29.1's
+  flymake defines it through a macro `check-declare` does not read, and
+  `treesit-buffer-root-node` with no argument list, as the TAG argument
+  0.4.4 gave it is newer than 29.1. Nothing changes when the package runs.
+
 ## [0.4.5] - 2026-10-14
 
 Verified against **Claude Code CLI 2.1.290**.

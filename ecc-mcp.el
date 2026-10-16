@@ -541,16 +541,23 @@ Starts the server when it is not running yet."
 (declare-function xref-item-location "xref" (item) t)
 (declare-function xref-location-group "xref" (location))
 (declare-function xref-location-line "xref" (location))
-(declare-function flymake-diagnostic-text "flymake" (diagnostic &optional parts))
+;; FILEONLY: Emacs 29.1's flymake defines this one through a macro of its
+;; own, which `check-declare' does not read.
+(declare-function flymake-diagnostic-text "flymake" (diagnostic &optional parts) t)
 (declare-function flymake-diagnostic-type "flymake" (diagnostic) t)
 (declare-function flymake-diagnostic-beg "flymake" (diagnostic) t)
-(declare-function treesit-parser-list "treesit.c" (&optional buffer language tag))
-(declare-function treesit-parser-language "treesit.c" (parser))
-(declare-function treesit-buffer-root-node "treesit" (&optional language tag))
-(declare-function treesit-node-type "treesit.c" (node))
-(declare-function treesit-node-child-count "treesit.c" (node &optional named))
-(declare-function treesit-node-child "treesit.c" (node n &optional named))
-(declare-function treesit-node-start "treesit.c" (node))
+;; The tree-sitter primitives are C, present only in a build with it.  They
+;; are declared against treesit.el with FILEONLY, because `check-declare'
+;; looks for treesit.c among the Emacs sources, and an installed Emacs --
+;; the one MELPA's checks run in, for one -- need not carry them.
+(declare-function treesit-parser-list "treesit" (&optional buffer language tag) t)
+(declare-function treesit-parser-language "treesit" (parser) t)
+;; No arglist: TAG came after 29.1.
+(declare-function treesit-buffer-root-node "treesit" t)
+(declare-function treesit-node-type "treesit" (node) t)
+(declare-function treesit-node-child-count "treesit" (node &optional named) t)
+(declare-function treesit-node-child "treesit" (node n &optional named) t)
+(declare-function treesit-node-start "treesit" (node) t)
 (declare-function treesit-node-at "treesit" (pos &optional parser-or-lang named))
 
 (defun ecc-mcp--visit (file)
