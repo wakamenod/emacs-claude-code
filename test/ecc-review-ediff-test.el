@@ -248,7 +248,7 @@ batch frame, 24 of them, does not have to spare."
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
                   (dolist (key '("c -comment" "x -remove" "l -list"
-                                 "C-c C-c -send" "C-c C-k -close"
+                                 "C-c C-c -send" "C-c C-k -drop"
                                  "q -close" "n,SPC -next diff"
                                  "s -list the files" "/ -filter the files"))
                     (should (string-match-p (regexp-quote key)
