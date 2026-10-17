@@ -118,6 +118,102 @@ names no socket are nobody to talk to."
         (should (equal (alist-get 'address (ecc-peer-resolve "review<107>" self))
                        "uds:/tmp/cc-socks/107.sock"))))))
 
+;;;; @session:NAME
+
+(ert-deftest ecc-peer-test-reference-expands-to-the-current-address ()
+  "A reference names the session with the address its process has at send.
+A restart gives it another process, and the next prompt the new address."
+  (ecc-test-with-fake-session self
+    (ecc-peer-test--with-registry directory
+      (let ((other (ecc-model-create-session :name "feat/b")))
+        (ecc-peer-test--write directory 101 (ecc-session-id self) "test-a1")
+        (ecc-peer-test--write directory 102 (ecc-session-id other) "repo-b-2c")
+        (let ((text (ecc-prompt-expand-references
+                     "@session:feat/b に結果を報告して" nil nil self)))
+          (should (string-prefix-p "the Claude session `feat/b` (reach it" text))
+          (should (string-search "`uds:/tmp/cc-socks/102.sock`" text))
+          ;; The particle written straight after the name stays where it was.
+          (should (string-suffix-p ") に結果を報告して" text))
+          ;; A session is named, and nothing is appended for it.
+          (should-not (string-search "---" text))
+          (should-not ecc-prompt-last-skipped))
+        ;; The session is resumed: another process, another socket.
+        (delete-file (expand-file-name "102.json" directory))
+        (ecc-peer-test--write directory 202 (ecc-session-id other) "repo-b-2c")
+        (let ((text (ecc-prompt-expand-references "@session:feat/bに送って" nil nil self)))
+          (should (string-search "`uds:/tmp/cc-socks/202.sock`" text))
+          (should-not (string-search "102.sock" text))
+          (should (string-suffix-p "に送って" text)))))))
+
+(ert-deftest ecc-peer-test-reference-to-a-session-that-went ()
+  "A session that is not running at send is left as written, and said so.
+No address goes out: one of a process that has gone reaches nobody, or
+whoever has its id now."
+  (ecc-test-with-fake-session self
+    (ecc-peer-test--with-registry directory
+      (let ((other (ecc-model-create-session :name "feat/b")))
+        (ecc-peer-test--write directory 102 (ecc-session-id other) "repo-b-2c")
+        (should (equal (ecc-prompt-expand-references
+                        "@session:gone を見て、@session:feat/b." nil nil self)
+                       (concat "@session:gone を見て、the Claude session `feat/b`"
+                               " (reach it with SendMessage to `uds:/tmp/cc-socks/102.sock`;"
+                               " ListAgents lists it as `repo-b-2c`).")))
+        (should (equal ecc-prompt-last-skipped '("@session:gone")))
+        (should (string-search "@session:gone named no session"
+                               (ecc-prompt--attachment-report)))
+        ;; The one that was there exits.
+        (delete-file (expand-file-name "102.json" directory))
+        (should (equal (ecc-prompt-expand-references "@session:feat/b を見て" nil nil self)
+                       "@session:feat/b を見て"))
+        (should (equal ecc-prompt-last-skipped '("@session:feat/b")))))))
+
+(ert-deftest ecc-peer-test-reference-names-with-spaces-and-letters ()
+  "A name is matched whole, so a space or a Japanese letter in it is kept.
+The longest name that is written there wins, and one only the start of
+a longer word is not it."
+  (ecc-test-with-fake-session self
+    (ecc-peer-test--with-registry directory
+      (let ((a (ecc-model-create-session :name "レビュー 係"))
+            (b (ecc-model-create-session :name "fix"))
+            (c (ecc-model-create-session :name "fix<2>")))
+        (ecc-peer-test--write directory 102 (ecc-session-id a) "a-2a")
+        (ecc-peer-test--write directory 103 (ecc-session-id b) "b-3b")
+        (ecc-peer-test--write directory 104 (ecc-session-id c) "c-4c")
+        (should (string-search "103.sock"
+                               (ecc-prompt-expand-references "@session:fix、頼む" nil nil self)))
+        (should (string-search "104.sock"
+                               (ecc-prompt-expand-references "@session:fix<2> 頼む" nil nil self)))
+        (let ((text (ecc-prompt-expand-references "@session:レビュー 係に送って" nil nil self)))
+          (should (string-search "102.sock" text))
+          (should (string-suffix-p "に送って" text)))
+        ;; `fixes' is no session, though it starts with one.
+        (should (equal (ecc-prompt-expand-references "@session:fixes" nil nil self)
+                       "@session:fixes"))))))
+
+(ert-deftest ecc-peer-test-at-completion-offers-sessions ()
+  "Typing @ reaches the other sessions, each told apart by an annotation."
+  (ecc-test-with-fake-session self
+    (ecc-peer-test--with-registry directory
+      (let ((other (ecc-model-create-session :name "feat/b")))
+        (ecc-peer-test--write directory 101 (ecc-session-id self) "test-a1")
+        (ecc-peer-test--write directory 102 (ecc-session-id other) "repo-b-2c")
+        (ecc-peer-test--write directory 104 "external-d" "term-d"
+                              'cwd "/tmp/elsewhere" 'entrypoint "cli")
+        (with-current-buffer (ecc-session-ensure-buffer self)
+          (ecc-chat-goto-prompt)
+          (insert "結果を @ses")
+          (let* ((capf (ecc-prompt-at-capf))
+                 (candidates (all-completions "@ses" (nth 2 capf)))
+                 (annotate (plist-get (nthcdr 3 capf) :annotation-function)))
+            (should (equal (sort candidates #'string<)
+                           '("@session:feat/b" "@session:term-d")))
+            (should (equal (try-completion "@ses" (nth 2 capf)) "@session:"))
+            (should (string-search "terminal" (funcall annotate "@session:term-d")))
+            (should (string-search "here" (funcall annotate "@session:feat/b")))
+            ;; The specials are annotated as they were.
+            (should (string-search "Send the region"
+                                   (funcall annotate "@region")))))))))
+
 ;;;; A message from another session
 
 (ert-deftest ecc-peer-test-message-opens-a-turn-named-after-its-sender ()
