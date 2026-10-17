@@ -26,6 +26,22 @@ Verified against **Claude Code CLI 2.1.290**.
   flymake defines it through a macro `check-declare` does not read, and
   `treesit-buffer-root-node` with no argument list, as the TAG argument
   0.4.4 gave it is newer than 29.1. Nothing changes when the package runs.
+- `ecc-global-map` is defined in `ecc.el` rather than `ecc-answer.el`, and
+  its keymap autoload names `ecc`, so the first key pressed under its
+  prefix -- `C-c c` in the documentation -- loads the whole package, about
+  0.2 s, instead of `ecc-answer` alone. Most of its keys loaded the whole
+  package on their own already. Every key means what it meant, and
+  `:bind-keymap` and `(global-set-key (kbd "C-c c") 'ecc-global-map)` bind
+  it as before. Its keys name commands of nearly every module, and
+  `ecc.el` is the one file that requires them all, so `ecc-answer.el` no
+  longer declares sixteen commands of the modules above it. An init that
+  adds a key to the map, as the 0.4.0 entry for `G` showed, now waits for
+  `ecc` rather than `ecc-answer`, which loads before the map is defined:
+
+  ```elisp
+  (with-eval-after-load 'ecc
+    (define-key ecc-global-map "G" #'ecc-review-range))
+  ```
 
 ### Fixed
 
