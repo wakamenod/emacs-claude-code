@@ -13,7 +13,8 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ## [Unreleased]
 
-Verified against **Claude Code CLI 2.1.296**.
+Verified against **Claude Code CLI 2.1.296**; the entries under Changed and
+Fixed against 2.1.290.
 
 ### Added
 
@@ -49,6 +50,34 @@ Verified against **Claude Code CLI 2.1.296**.
   registry at that moment, so that it can report back without being
   written to first. Nothing is added when the registry has no socket for
   it.
+
+### Changed
+
+- The `declare-function` forms pass `check-declare` on Emacs 29.1 and in an
+  Emacs installed without its C sources, which is what MELPA's checks run
+  in: melpazoid builds Emacs and then deletes the source. The six
+  tree-sitter primitives that 0.4.4 declared in `treesit.c` are declared in
+  `treesit.el` with FILEONLY, since the C file is not there to look in.
+  `flymake-diagnostic-text` is declared with FILEONLY too, as 29.1's
+  flymake defines it through a macro `check-declare` does not read, and
+  `treesit-buffer-root-node` with no argument list, as the TAG argument
+  0.4.4 gave it is newer than 29.1. Nothing changes when the package runs.
+
+### Fixed
+
+- A Bash call that comes up open on the files it changed shows its
+  `description:` and the diff, and no longer its `command:` or its `→`
+  output. 0.4.2 cut a command of several lines to
+  `ecc-render-result-max-lines`, but a command of one long line was never
+  cut: wrapped to five lines, with the output under it, it still stood
+  between the description and `Updated FILE (+n -m)`. The heading already
+  says the command. A call that failed keeps its output, which is what
+  says why. A call the CLI could not diff, which shows only a note such as
+  `(file diff unavailable for this command)`, keeps its command and its
+  output, as there is no diff to show instead. `RET` and `o` still show
+  the command, the output and the whole diff. Every other tool call, and
+  a Bash call that changed no file, is drawn as before, its inputs of
+  several lines cut as 0.4.2 cut them.
 
 ## [0.4.5] - 2026-10-14
 
