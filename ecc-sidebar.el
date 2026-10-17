@@ -59,6 +59,7 @@
 (require 'mule-util)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-window)
 (require 'ecc-worktree)
 (require 'ecc-space)
@@ -237,7 +238,7 @@ time."
   (let* ((branch (ecc-space-branch space))
          (named (equal (ecc-space-name space)
                        (and branch (string-remove-prefix "worktree/" branch))))
-         (ahead (and branch (ecc-worktree-ahead-behind (ecc-space-root space))))
+         (ahead (and branch (ecc-git-ahead-behind (ecc-space-root space))))
          (parts (delq nil
                       (list (and branch (not named) branch)
                             (and ahead (format "↑%d ↓%d"
@@ -603,7 +604,7 @@ from here but not answered."
 (defun ecc-sidebar-refresh ()
   "Ask git again and draw the sidebar afresh."
   (interactive)
-  (ecc-worktree-forget)
+  (ecc-git-forget)
   (ecc-sidebar-redraw))
 
 (defvar ecc-sidebar-mode-map

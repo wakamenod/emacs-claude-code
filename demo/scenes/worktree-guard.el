@@ -154,7 +154,7 @@
   (demo-say (format "%s is in %s · on %s · Spaces: %s"
                     (ecc-session-name demo-handed)
                     (abbreviate-file-name (ecc-session-project-root demo-handed))
-                    (or (ecc-worktree-branch (ecc-session-project-root demo-handed)) "?")
+                    (or (ecc-git-branch (ecc-session-project-root demo-handed)) "?")
                     (mapconcat #'ecc-space-name (ecc-space-list) " | ")))
   nil)
 
@@ -176,8 +176,8 @@
   (demo-say (format "Every session stopped · worktrees: %s"
                     (mapconcat (lambda (entry)
                                  (abbreviate-file-name
-                                  (ecc-worktree-entry-path entry)))
-                               (ecc-worktree-list demo-root) ", ")))
+                                  (ecc-git-worktree-entry-path entry)))
+                               (ecc-git-worktrees demo-root) ", ")))
   nil)
 
 (provide 'worktree-guard)

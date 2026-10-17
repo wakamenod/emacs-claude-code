@@ -29,19 +29,14 @@
 
 ;;; Commentary:
 
-;; What git says about the worktrees of a repository, and the commands
-;; that start a session in one.
+;; The commands that make, start a session in and remove a worktree.
+;; What git says about one -- its branch, its main worktree, the others
+;; beside it -- is `ecc-git', which sits under the windows.
 ;;
 ;; A worktree is a second working tree of one repository on a branch of
 ;; its own.  It is the way to let two sessions work on one project
 ;; without either of them seeing the other's edits, and it is what
 ;; `CLAUDE.md' asks of the sessions that work on this package.
-;;
-;; Nothing here draws anything.  The reason the reading side exists at
-;; all is that the sidebar asks, of every project it lists, whether it is
-;; a linked worktree and of what -- `ecc-worktree-main' is what puts a
-;; worktree under its parent -- and it asks on every redraw, so the
-;; answers are kept for a few seconds rather than worked out again.
 ;;
 ;; No branch is ever deleted here.  Removing a worktree is undoing a
 ;; directory, and the work is on the branch -- so what is removed can
@@ -54,6 +49,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'ecc-core)
+(require 'ecc-git)
 (require 'ecc-window)
 (require 'ecc-proc)
 (require 'ecc-mcp)
@@ -79,228 +75,6 @@ on this repository (2026-09-14).
 An absolute name is a directory for every repository to share, and a
 worktree lands at \"<directory>/<repository>/<slug>\", the repository
 being the directory name of its main worktree.  \"~\" is expanded.")
-
-(defvar ecc-worktree-git-executable "git"
-  "Name of, or path to, the git executable.
-Separate from `ecc-review-git-executable' on purpose: this file is
-below `ecc-review' and must not pull the review in to ask git a
-question.")
-
-;;;; What git says
-
-(cl-defstruct ecc-worktree-entry
-  path        ; the worktree, as `file-name-as-directory'
-  branch      ; the branch it is on, without refs/heads/, or nil
-  main-p      ; non-nil for the main worktree, which git lists first
-  detached-p  ; non-nil when HEAD is not on a branch
-  locked-p    ; git's reason, or t, when the worktree is locked, else nil
-  prunable-p) ; git's reason when the worktree is gone, else nil
-
-(defun ecc-worktree--git (directory &rest args)
-  "Run git with ARGS in DIRECTORY and return (EXIT-CODE . OUTPUT).
-Returns nil when git cannot be run at all.  What git writes to stderr
-is in OUTPUT with the rest: the whole point of asking git to create or
-remove a worktree is that its refusal can be shown to the user, and it
-refuses on stderr."
-  (when (and (executable-find ecc-worktree-git-executable)
-             (file-directory-p directory))
-    (with-temp-buffer
-      (let ((default-directory (file-name-as-directory directory)))
-        (condition-case err
-            (cons (apply #'call-process ecc-worktree-git-executable nil
-                         (list t t) nil args)
-                  (buffer-string))
-          (file-error
-           (ecc-log "worktree" "git failed: %s" (error-message-string err))
-           nil))))))
-
-(defun ecc-worktree--output (directory &rest args)
-  "Return the trimmed output of a successful git with ARGS in DIRECTORY.
-Nil when git failed or could not be run.  An empty string is a fair
-answer -- `git branch --list' says that way that the branch does not
-exist -- so a caller that cares tells it from nil."
-  (pcase (apply #'ecc-worktree--git directory args)
-    (`(0 . ,output) (string-trim output))))
-
-(defun ecc-worktree--short-branch (ref)
-  "Return REF without the refs/heads/ in front of it."
-  (if (string-prefix-p "refs/heads/" ref)
-      (substring ref (length "refs/heads/"))
-    ref))
-
-(defun ecc-worktree-parse (string)
-  "Return the worktrees of a `git worktree list --porcelain' STRING.
-A list of `ecc-worktree-entry', the main worktree first, which is the
-order git prints them in.  A record is a `worktree PATH' line followed
-by the attributes of that worktree -- `HEAD', `branch', `detached',
-`bare', `locked' and `prunable' -- and a blank line ends it.  An
-attribute this package has no use for is skipped rather than refused:
-git adds them.  `locked' may carry a reason, put there by Claude Code's
-own worktree (2026-09-14), and the reason is kept."
-  (let ((entries nil)
-        (current nil))
-    (dolist (line (split-string (or string "") "\n"))
-      (cond
-       ((string-prefix-p "worktree " line)
-        (setq current (make-ecc-worktree-entry
-                       :path (file-name-as-directory
-                              (substring line (length "worktree ")))
-                       :main-p (null entries)))
-        (push current entries))
-       ((null current) nil)
-       ((string-prefix-p "branch " line)
-        (setf (ecc-worktree-entry-branch current)
-              (ecc-worktree--short-branch (substring line (length "branch ")))))
-       ((equal line "detached")
-        (setf (ecc-worktree-entry-detached-p current) t))
-       ((string-prefix-p "locked" line)
-        (setf (ecc-worktree-entry-locked-p current)
-              (let ((reason (string-trim (substring line (length "locked")))))
-                (if (string-empty-p reason) t reason))))
-       ((string-prefix-p "prunable" line)
-        (setf (ecc-worktree-entry-prunable-p current)
-              (or (string-trim (substring line (length "prunable"))) t)))))
-    (nreverse entries)))
-
-;;;; Keeping the answers
-
-;; The sidebar asks `ecc-worktree-main' and `ecc-worktree-branch' of
-;; every project it draws, on every redraw, and each of those is a git
-;; process.  The answers are kept the way `ecc-window--project-root-cache'
-;; keeps a project root, with a clock on top: a branch does change under
-;; Emacs, unlike a project root, so the cache is thrown away by the
-;; commands here and goes stale on its own besides.  A test binds a
-;; fresh hash.
-
-(defvar ecc-worktree--cache (make-hash-table :test #'equal)
-  "Hash of a question about a directory to the answer git gave.")
-
-(defvar ecc-worktree--cache-ttl 10
-  "How many seconds an answer from git is reused for.
-Long enough that a redraw costs no process, short enough that a branch
-switched in a terminal shows up without anybody asking for it.")
-
-(defun ecc-worktree-forget ()
-  "Forget what git has said about the worktrees.
-The next question asks git again.  Called by the commands here, and by
-whatever offers the user a way to refresh."
-  (clrhash ecc-worktree--cache))
-
-(defun ecc-worktree--memo (key thunk)
-  "Return the value of THUNK for KEY, asking it at most every few seconds."
-  (let ((hit (gethash key ecc-worktree--cache))
-        (now (float-time)))
-    (if (and hit (< (- now (car hit)) ecc-worktree--cache-ttl))
-        (cdr hit)
-      (cdr (puthash key (cons now (funcall thunk)) ecc-worktree--cache)))))
-
-(defun ecc-worktree--key (directory)
-  "Return the cache key DIRECTORY is asked under."
-  (file-name-as-directory (expand-file-name (or directory default-directory))))
-
-(defun ecc-worktree-list (root)
-  "Return the worktrees of the repository holding ROOT, main first.
-Nil when ROOT is not in a git repository, or git is not installed."
-  (let ((root (ecc-worktree--key root)))
-    (ecc-worktree--memo
-     (cons 'list root)
-     (lambda ()
-       (when-let* ((output (ecc-worktree--output
-                            root "worktree" "list" "--porcelain")))
-         (ecc-worktree-parse output))))))
-
-(defun ecc-worktree-toplevel (directory)
-  "Return the top of the worktree holding DIRECTORY, or nil."
-  (let ((directory (ecc-worktree--key directory)))
-    (ecc-worktree--memo
-     (cons 'toplevel directory)
-     (lambda ()
-       (when-let* ((output (ecc-worktree--output
-                            directory "rev-parse" "--show-toplevel")))
-         (and (not (string-empty-p output))
-              (file-name-as-directory output)))))))
-
-(defun ecc-worktree-main (root)
-  "Return the main worktree of ROOT when ROOT is a linked worktree.
-Nil when ROOT is the main worktree itself, or is not in a repository at
-all.  That nil is the whole answer a caller needs to lay a repository
-out: a directory with a main worktree above it is a worktree of
-somebody else's project, and everything else stands on its own.
-
-The paths are compared through `file-truename' because git resolves
-symbolic links and the caller has not: on macOS a worktree under
-\"/tmp\" is \"/private/tmp\" to git and neither spelling is wrong."
-  (let ((root (ecc-worktree--key root)))
-    (ecc-worktree--memo
-     (cons 'main root)
-     (lambda ()
-       (when-let* ((top (ecc-worktree-toplevel root))
-                   (entries (ecc-worktree-list root))
-                   (main (ecc-worktree-entry-path (car entries))))
-         (unless (equal (file-truename main) (file-truename top))
-           main))))))
-
-(defun ecc-worktree-session-name (root)
-  "Return what a session started in ROOT should be called, or nil.
-The branch, when ROOT is a worktree of a repository: that is what the
-Space above it is called and what the user asked for, and the directory
-is a slug of the branch that says nothing more -- one screen calling the
-same thing `feat/one\=' and `feat-one\=' is one name too many (2026-09-17).
-
-Nil for the main worktree and for a directory outside a repository,
-where the name of the directory is the answer, and for a detached HEAD,
-which has no branch.  The `worktree/\=' herdr puts in front of the
-branches it generates is dropped, as `ecc-space--name\=' drops it."
-  (when (ecc-worktree-main root)
-    (when-let* ((branch (ecc-worktree-branch root)))
-      (string-remove-prefix "worktree/" branch))))
-
-(defun ecc-worktree-branch (root)
-  "Return the branch checked out in ROOT, or nil.
-Nil for a detached HEAD as well as for a directory that is not in a
-repository: neither has a branch to name."
-  (let ((root (ecc-worktree--key root)))
-    (ecc-worktree--memo
-     (cons 'branch root)
-     (lambda ()
-       (when-let* ((ref (ecc-worktree--output
-                         root "symbolic-ref" "--quiet" "HEAD")))
-         (and (not (string-empty-p ref))
-              (ecc-worktree--short-branch ref)))))))
-
-(defun ecc-worktree-ahead-behind (root)
-  "Return (AHEAD . BEHIND) of ROOT against its upstream, or nil.
-Nil when the branch has no upstream, which is the usual case for a
-branch that was made here and never pushed.
-
-The left side of `rev-list --left-right' is the first revision named,
-which is the upstream, so the left count is what the upstream has and
-HEAD does not -- behind -- and the right count is ahead.  Verified
-against git 2.50.1 by `ecc-worktree-test-ahead-behind' (2026-09-14)."
-  (let ((root (ecc-worktree--key root)))
-    (ecc-worktree--memo
-     (cons 'ahead-behind root)
-     (lambda ()
-       (when-let* ((output (ecc-worktree--output
-                            root "rev-list" "--left-right" "--count"
-                            "@{u}...HEAD")))
-         (pcase (split-string output)
-           (`(,behind ,ahead)
-            (cons (string-to-number ahead) (string-to-number behind)))))))))
-
-(defun ecc-worktree-of-branch (root branch)
-  "Return the worktree of the repository ROOT that has BRANCH checked out.
-Nil when no worktree holds it.  git allows one branch in one worktree
-at a time, so this is what says in advance that `ecc-worktree-create'
-would be refused -- and where the work on that branch already is."
-  (seq-find (lambda (entry) (equal (ecc-worktree-entry-branch entry) branch))
-            (ecc-worktree-list root)))
-
-(defun ecc-worktree-branches (root)
-  "Return the local branches of the repository holding ROOT."
-  (when-let* ((output (ecc-worktree--output
-                       root "branch" "--format=%(refname:short)")))
-    (split-string output "\n" t)))
 
 ;;;; Where a new one goes
 
@@ -336,7 +110,7 @@ shapes; the result is a directory name and nothing is created."
 
 (defun ecc-worktree--refused (result what)
   "Signal that git refused WHAT, quoting RESULT.
-RESULT is what `ecc-worktree--git' returned."
+RESULT is what `ecc-git-run-with-stderr' returned."
   (user-error "%s: %s" what
               (if result
                   (string-trim (cdr result))
@@ -354,15 +128,15 @@ it refuses is what the error says."
       (user-error "The branch name is empty"))
     (when (file-exists-p path)
       (user-error "%s exists already" (abbreviate-file-name path)))
-    (let* ((known (ecc-worktree--output root "branch" "--list" branch))
+    (let* ((known (ecc-git-output root "branch" "--list" branch))
            (result (if (and known (not (string-empty-p known)))
-                       (ecc-worktree--git root "worktree" "add" path branch)
-                     (ecc-worktree--git root "worktree" "add" "-b" branch path
-                                        (or base "HEAD")))))
+                       (ecc-git-run-with-stderr root "worktree" "add" path branch)
+                     (ecc-git-run-with-stderr root "worktree" "add" "-b" branch path
+                                              (or base "HEAD")))))
       (unless (eq 0 (car-safe result))
         (ecc-worktree--refused result (format "Cannot add a worktree for %s"
                                               branch)))
-      (ecc-worktree-forget)
+      (ecc-git-forget)
       path)))
 
 (defvar ecc-worktree-removed-hook nil
@@ -389,8 +163,8 @@ answered for them -- FORCE non-nil is that answer given in advance.
 Its other refusals -- a worktree that is locked, one that is the main
 one -- are passed on as they are: neither is a thing to insist on."
   (let* ((path (file-name-as-directory (expand-file-name path)))
-         (where (or (ecc-worktree-main path) path))
-         (result (ecc-worktree--git where "worktree" "remove" path)))
+         (where (or (ecc-git-main-worktree path) path))
+         (result (ecc-git-run-with-stderr where "worktree" "remove" path)))
     (when (and result
                (/= 0 (car result))
                (string-match-p "modified or untracked files" (cdr result))
@@ -399,11 +173,11 @@ one -- are passed on as they are: neither is a thing to insist on."
                     (format "%s has changes that are not committed.  \
 Remove it anyway? "
                             (abbreviate-file-name path)))))
-      (setq result (ecc-worktree--git where "worktree" "remove" "--force" path)))
+      (setq result (ecc-git-run-with-stderr where "worktree" "remove" "--force" path)))
     (unless (eq 0 (car-safe result))
       (ecc-worktree--refused result (format "Cannot remove %s"
                                             (abbreviate-file-name path))))
-    (ecc-worktree-forget)
+    (ecc-git-forget)
     (run-hook-with-args 'ecc-worktree-removed-hook path)
     path))
 
@@ -435,7 +209,7 @@ so after every removal would be a sentence nobody needs twice."
   "Return what to call the worktree ROOT in a question.
 Its branch, which is what the sidebar and the tab call it as well, and
 the name of the directory when the worktree is detached."
-  (or (ecc-worktree-branch root)
+  (or (ecc-git-branch root)
       (file-name-nondirectory (directory-file-name root))))
 
 ;;;; Offering to undo a worktree nothing is left in
@@ -510,7 +284,7 @@ rather than killed.  This package does not close a user\='s buffers, and
 a file that goes out from under one is something to be told about
 before the fact, not tidied up after."
   (when (and root
-             (ecc-worktree-main root)
+             (ecc-git-main-worktree root)
              (null (ecc-worktree-sessions root)))
     (let ((open (length (ecc-worktree--visiting-buffers root))))
       (when (yes-or-no-p
@@ -537,7 +311,7 @@ A directory that is gone already, or that git no longer calls a linked
 worktree, is left out of the question."
   (let ((roots (seq-filter (lambda (root)
                              (and (file-directory-p root)
-                                  (ecc-worktree-main root)))
+                                  (ecc-git-main-worktree root)))
                            roots)))
     (when (and roots
                (yes-or-no-p
@@ -571,7 +345,7 @@ being read, the usage probe, an inline question -- nor while
     (let ((root (ecc-window-session-project session)))
       (when (and root
                  (not (member root ecc-worktree--offers-pending))
-                 (ecc-worktree-main root)
+                 (ecc-git-main-worktree root)
                  (null (ecc-worktree-sessions root)))
         (push root ecc-worktree--offers-pending)
         (run-at-time 0 nil #'ecc-worktree--offer-removal-now root)))))
@@ -630,7 +404,7 @@ sends the new session looking for it."
   (let* ((files (and session (ecc-model-files session)))
          (plans (and session (ecc-model-plan-files session)))
          (record (and session (ecc-history-file (ecc-session-id session))))
-         (dirty (ecc-worktree--output root "status" "--porcelain"))
+         (dirty (ecc-git-output root "status" "--porcelain"))
          (sections nil))
     (when files
       (push (concat "Files the conversation this came from touched, \
@@ -692,18 +466,19 @@ person asked for it: two sessions in one worktree is not what handing a
 piece of work over means, and the caller -- a model naming a branch of
 its own -- can name another one."
   (ecc--require-package)
-  (let* ((asked (ecc-worktree--key root))
-         (root (or (ecc-worktree-main asked) asked))
+  (let* ((asked (file-name-as-directory
+                 (expand-file-name (or root default-directory))))
+         (root (or (ecc-git-main-worktree asked) asked))
          (branch (string-trim (or branch "")))
          (brief (string-trim (or brief ""))))
     (when (string-empty-p branch)
       (user-error "The branch name is empty"))
     (when (string-empty-p brief)
       (user-error "There is nothing to hand over"))
-    (when-let* ((held (ecc-worktree-of-branch root branch)))
+    (when-let* ((held (ecc-git-worktree-of-branch root branch)))
       (user-error "%s is checked out at %s already; name another branch"
                   branch (abbreviate-file-name
-                          (ecc-worktree-entry-path held))))
+                          (ecc-git-worktree-entry-path held))))
     ;; The facts are taken before the worktree is made, from the session
     ;; that is handing the work over; `ecc-start' below makes another one
     ;; and `ecc-mcp-session' would then be the wrong answer to read.
@@ -950,9 +725,9 @@ a modification.  Both flags are given rather than left to the
 configuration: under status.showUntrackedFiles=no a plain `git status'
 leaves an untracked file out, and `git worktree remove' then deletes it
 and exits 0 (git 2.54.0, 2026-10-10).  Nil when git could not answer."
-  (when-let* ((output (ecc-worktree--output root "status" "--porcelain"
-                                            "--untracked-files=all"
-                                            "--ignore-submodules=none")))
+  (when-let* ((output (ecc-git-output root "status" "--porcelain"
+                                      "--untracked-files=all"
+                                      "--ignore-submodules=none")))
     (length (split-string output "\n" t))))
 
 (defun ecc-worktree--changes-text (count)
@@ -964,13 +739,13 @@ and exits 0 (git 2.54.0, 2026-10-10).  Nil when git could not answer."
 :main; :remote, origin or the only remote there is, nil without one;
 :bases, the integration branches by name, the remote's HEAD first;
 :refs, those of them the repository has as REMOTE/NAME."
-  (let* ((remotes (split-string (or (ecc-worktree--output main "remote") "")
+  (let* ((remotes (split-string (or (ecc-git-output main "remote") "")
                                 "\n" t))
          (remote (cond ((member "origin" remotes) "origin")
                        ((= 1 (length remotes)) (car remotes))))
          (head (and remote
-                    (ecc-worktree--output main "symbolic-ref" "--quiet" "--short"
-                                          (format "refs/remotes/%s/HEAD" remote))))
+                    (ecc-git-output main "symbolic-ref" "--quiet" "--short"
+                                    (format "refs/remotes/%s/HEAD" remote))))
          (bases (delete-dups
                  (append (and head (not (string-empty-p head))
                               (list (string-remove-prefix (concat remote "/")
@@ -978,7 +753,7 @@ and exits 0 (git 2.54.0, 2026-10-10).  Nil when git could not answer."
                          (copy-sequence ecc-worktree-integration-branches))))
          (refs (and remote
                     (seq-filter (lambda (ref)
-                                  (ecc-worktree--output
+                                  (ecc-git-output
                                    main "rev-parse" "--verify" "--quiet"
                                    (concat "refs/remotes/" ref)))
                                 (mapcar (lambda (base) (concat remote "/" base))
@@ -987,16 +762,16 @@ and exits 0 (git 2.54.0, 2026-10-10).  Nil when git could not answer."
 
 (defun ecc-worktree--ancestor-p (root commit of)
   "Return non-nil when COMMIT is an ancestor of OF in the repository ROOT."
-  (eq 0 (car-safe (ecc-worktree--git root "merge-base" "--is-ancestor"
-                                     commit of))))
+  (eq 0 (car-safe (ecc-git-run-with-stderr root "merge-base" "--is-ancestor"
+                                           commit of))))
 
 (defun ecc-worktree--committed-on (root ref)
   "Return `yes' when the reflog of REF in ROOT records a commit, else `no'.
 Nil when git keeps no reflog of REF -- core.logAllRefUpdates off, or
 every entry expired -- and there is no telling."
   (let ((subjects (split-string
-                   (or (ecc-worktree--output root "reflog" "show"
-                                             "--format=%gs" ref)
+                   (or (ecc-git-output root "reflog" "show"
+                                       "--format=%gs" ref)
                        "")
                    "\n" t)))
     (cond ((null subjects) nil)
@@ -1138,14 +913,14 @@ removal would leave it in a directory that is gone."
 (defun ecc-worktree--entry-refusal (entry)
   "Return why ENTRY may not be removed whatever is in it, or nil."
   (cond
-   ((ecc-worktree-entry-main-p entry) "it is the main worktree")
-   ((ecc-worktree-entry-prunable-p entry)
+   ((ecc-git-worktree-entry-main-p entry) "it is the main worktree")
+   ((ecc-git-worktree-entry-prunable-p entry)
     (format "its directory is gone (%s); `git worktree prune' clears the \
-record" (ecc-worktree-entry-prunable-p entry)))
-   ((ecc-worktree-entry-locked-p entry)
+record" (ecc-git-worktree-entry-prunable-p entry)))
+   ((ecc-git-worktree-entry-locked-p entry)
     (format "it is locked%s"
-            (if (stringp (ecc-worktree-entry-locked-p entry))
-                (format " (%s)" (ecc-worktree-entry-locked-p entry))
+            (if (stringp (ecc-git-worktree-entry-locked-p entry))
+                (format " (%s)" (ecc-git-worktree-entry-locked-p entry))
               "")))))
 
 (defun ecc-worktree--obstacle (facts)
@@ -1178,8 +953,8 @@ A plist: :changes (a count, or nil when git could not say), :sessions,
 `ecc-worktree-merged').  The merge check comes last, and asks gh only
 when nothing else stands in the way.  Nil for a worktree whose directory
 is gone."
-  (let ((root (ecc-worktree-entry-path entry)))
-    (unless (ecc-worktree-entry-prunable-p entry)
+  (let ((root (ecc-git-worktree-entry-path entry)))
+    (unless (ecc-git-worktree-entry-prunable-p entry)
       (let* ((sessions (ecc-worktree-sessions root))
              (buffers (ecc-worktree--visiting-buffers root))
              (facts (list :changes (ecc-worktree--changes root)
@@ -1188,12 +963,12 @@ is gone."
                           :buffers buffers
                           :modified (seq-filter #'buffer-modified-p buffers)
                           :space (ecc-worktree--space-p root)))
-             (tip (ecc-worktree--output root "rev-parse" "HEAD"))
+             (tip (ecc-git-output root "rev-parse" "HEAD"))
              (merged (if tip
                          (ecc-worktree-merged
                           repository root
-                          (and (not (ecc-worktree-entry-detached-p entry))
-                               (ecc-worktree-entry-branch entry))
+                          (and (not (ecc-git-worktree-entry-detached-p entry))
+                               (ecc-git-worktree-entry-branch entry))
                           tip
                           (or (ecc-worktree--entry-refusal entry)
                               (ecc-worktree--obstacle facts)))
@@ -1212,16 +987,16 @@ FACTS is what `ecc-worktree--inspect' found."
   "Return the worktrees of the repository the calling session works in.
 Main first, asked of git afresh."
   (let ((root (ecc-worktree--calling-root)))
-    (ecc-worktree-forget)
-    (or (ecc-worktree-list root)
+    (ecc-git-forget)
+    (or (ecc-git-worktrees root)
         (user-error "%s is not in a git repository"
                     (abbreviate-file-name root)))))
 
 (defun ecc-worktree--heading (entry)
   "Return the first line `list_worktrees' gives ENTRY."
-  (format "%s (%s)" (ecc-worktree-entry-path entry)
-          (if (ecc-worktree-entry-branch entry)
-              (format "branch %s" (ecc-worktree-entry-branch entry))
+  (format "%s (%s)" (ecc-git-worktree-entry-path entry)
+          (if (ecc-git-worktree-entry-branch entry)
+              (format "branch %s" (ecc-git-worktree-entry-branch entry))
             "detached HEAD")))
 
 (defun ecc-worktree--describe (entry facts)
@@ -1235,12 +1010,12 @@ FACTS is what `ecc-worktree--inspect' found."
      (delq nil
            (list
             (ecc-worktree--heading entry)
-            (when (ecc-worktree-entry-prunable-p entry)
-              (format "  missing: %s" (ecc-worktree-entry-prunable-p entry)))
-            (when (ecc-worktree-entry-locked-p entry)
+            (when (ecc-git-worktree-entry-prunable-p entry)
+              (format "  missing: %s" (ecc-git-worktree-entry-prunable-p entry)))
+            (when (ecc-git-worktree-entry-locked-p entry)
               (format "  locked: %s"
-                      (if (stringp (ecc-worktree-entry-locked-p entry))
-                          (ecc-worktree-entry-locked-p entry)
+                      (if (stringp (ecc-git-worktree-entry-locked-p entry))
+                          (ecc-git-worktree-entry-locked-p entry)
                         "yes")))
             (when facts
               (format "  changes: %s"
@@ -1291,7 +1066,7 @@ FACTS is what `ecc-worktree--inspect' found."
 The MCP tool `list_worktrees'.  A worktree that cannot be described says
 why in its own lines, and the others are described all the same."
   (let* ((entries (ecc-worktree--mcp-entries))
-         (main (ecc-worktree-entry-path (car entries)))
+         (main (ecc-git-worktree-entry-path (car entries)))
          (repository (ecc-worktree--repository main))
          (linked (cdr entries)))
     (concat (format "Repository: %s (the main worktree, never removed)\n\n"
@@ -1305,17 +1080,17 @@ why in its own lines, and the others are described all the same."
                      (error
                       (format "%s\n  error: %s" (ecc-worktree--heading entry)
                               (ecc-worktree--failed
-                               "describing" (ecc-worktree-entry-path entry)
+                               "describing" (ecc-git-worktree-entry-path entry)
                                err)))))
                  linked "\n\n")
               "It has no linked worktree."))))
 
 (defun ecc-worktree--entry-at (entries path)
   "Return the worktree among ENTRIES checked out at PATH, or nil.
-Through `file-truename', as `ecc-worktree-main' compares."
+Through `file-truename', as `ecc-git-main-worktree' compares."
   (let ((wanted (file-truename (file-name-as-directory path))))
     (seq-find (lambda (entry)
-                (equal (file-truename (ecc-worktree-entry-path entry)) wanted))
+                (equal (file-truename (ecc-git-worktree-entry-path entry)) wanted))
               entries)))
 
 (defun ecc-worktree--remove-quietly (main root sessions)
@@ -1325,8 +1100,8 @@ Returns nil when the worktree is gone, or git's refusal.  Never
 over changes, and anything git still refuses is reported, not insisted
 on."
   (ecc-worktree--stop-and-close root sessions)
-  (let ((result (ecc-worktree--git main "worktree" "remove" root)))
-    (ecc-worktree-forget)
+  (let ((result (ecc-git-run-with-stderr main "worktree" "remove" root)))
+    (ecc-git-forget)
     (if (eq 0 (car-safe result))
         (progn (run-hook-with-args 'ecc-worktree-removed-hook root)
                nil)
@@ -1352,7 +1127,7 @@ path is still tried."
           (setq refusal (or refusal (ecc-worktree--refusal entry facts)))
           (if refusal
               (format "refused %s: %s" path refusal)
-            (let* ((root (ecc-worktree-entry-path entry))
+            (let* ((root (ecc-git-worktree-entry-path entry))
                    (sessions (plist-get facts :sessions))
                    (names (mapcar #'ecc-session-name sessions))
                    (open (length (plist-get facts :buffers)))
@@ -1365,8 +1140,8 @@ path is still tried."
                             ""))
                 (format "removed %s (%s kept; merged: %s%s%s%s)"
                         root
-                        (if (ecc-worktree-entry-branch entry)
-                            (format "branch %s" (ecc-worktree-entry-branch entry))
+                        (if (ecc-git-worktree-entry-branch entry)
+                            (format "branch %s" (ecc-git-worktree-entry-branch entry))
                           "no branch, detached HEAD")
                         (plist-get facts :how)
                         (if names
@@ -1390,14 +1165,14 @@ a line for each -- removed, refused with the reason, or failed with the
 error -- and nothing is asked."
   (let* ((paths (if (stringp paths) (list paths) (append paths nil)))
          (entries (ecc-worktree--mcp-entries))
-         (main (ecc-worktree-entry-path (car entries)))
+         (main (ecc-git-worktree-entry-path (car entries)))
          (repository (ecc-worktree--repository main)))
     (when (null paths)
       (user-error "No path to remove"))
     (mapconcat (lambda (path)
                  (prog1 (ecc-worktree--remove-one repository entries path)
                    ;; What went is no longer there to match the next path.
-                   (setq entries (ecc-worktree-list main))))
+                   (setq entries (ecc-git-worktrees main))))
                paths "\n")))
 
 (defvar ecc-worktree-removal-instructions
@@ -1461,7 +1236,7 @@ mcp__SERVER__TOOL, and the prefix is made from `ecc-mcp-server-name\='."
 A worktree of a worktree is not a thing, so a command run from a
 linked worktree means the repository it came from."
   (let ((root (ecc-context-project-root)))
-    (or (ecc-worktree-main root) root)))
+    (or (ecc-git-main-worktree root) root)))
 
 (defun ecc-worktree-read-branch (root)
   "Ask for the branch a new worktree of ROOT should be on.
@@ -1469,29 +1244,29 @@ The existing branches are offered but nothing is filled in: the name of
 a branch is the user's to give, and a default here would be a branch
 made by accident."
   (string-trim (completing-read "Branch for the worktree: "
-                                (ecc-worktree-branches root))))
+                                (ecc-git-branches root))))
 
 (defun ecc-worktree-read-linked (prompt)
   "Ask with PROMPT which linked worktree of this project to act on.
 The current one answers for itself when the command was run in one."
   (let ((root (ecc-context-project-root)))
-    (if (ecc-worktree-main root)
+    (if (ecc-git-main-worktree root)
         root
-      (let* ((entries (seq-remove #'ecc-worktree-entry-main-p
-                                  (ecc-worktree-list root))))
+      (let* ((entries (seq-remove #'ecc-git-worktree-entry-main-p
+                                  (ecc-git-worktrees root))))
         (unless entries
           (user-error "This project has no worktree of its own"))
         (let* ((labels (mapcar (lambda (entry)
                                  (cons (ecc-worktree--label entry) entry))
                                entries))
                (choice (completing-read prompt (mapcar #'car labels) nil t)))
-          (ecc-worktree-entry-path (cdr (assoc choice labels))))))))
+          (ecc-git-worktree-entry-path (cdr (assoc choice labels))))))))
 
 (defun ecc-worktree--label (entry)
   "Return the line the worktree ENTRY is offered under."
   (format "%-24s  %s"
-          (ecc--truncate (or (ecc-worktree-entry-branch entry) "(detached)") 24)
-          (abbreviate-file-name (ecc-worktree-entry-path entry))))
+          (ecc--truncate (or (ecc-git-worktree-entry-branch entry) "(detached)") 24)
+          (abbreviate-file-name (ecc-git-worktree-entry-path entry))))
 
 ;;;###autoload
 (defun ecc-start-worktree (branch)
@@ -1508,18 +1283,18 @@ goes is `ecc-worktree-directory'."
          ;; would have given it: Claude Code's own worktrees turn a `/'
          ;; into a `+' where this turns it into a `-' (2026-09-14), so
          ;; the branch is what is asked about, not the directory.
-         (existing (ecc-worktree-of-branch root branch))
+         (existing (ecc-git-worktree-of-branch root branch))
          (path (cond
                 ((null existing) (ecc-worktree-create root branch))
-                ((ecc-worktree-entry-main-p existing)
+                ((ecc-git-worktree-entry-main-p existing)
                  (user-error "%s is the branch of the repository itself"
                              branch))
                 ((yes-or-no-p
                   (format "%s is checked out at %s already.  Start a session there? "
                           branch
                           (abbreviate-file-name
-                           (ecc-worktree-entry-path existing))))
-                 (ecc-worktree-entry-path existing))
+                           (ecc-git-worktree-entry-path existing))))
+                 (ecc-git-worktree-entry-path existing))
                 (t (user-error "Left alone"))))
          (session (ecc-start path)))
     (message "Started %s in %s (branch %s)"
@@ -1532,14 +1307,14 @@ goes is `ecc-worktree-directory'."
 Interactively, the worktrees of the project are offered."
   (interactive
    (list (let* ((root (ecc-context-project-root))
-                (entries (seq-remove #'ecc-worktree-entry-main-p
-                                     (ecc-worktree-list root))))
+                (entries (seq-remove #'ecc-git-worktree-entry-main-p
+                                     (ecc-git-worktrees root))))
            (unless entries
              (user-error "This project has no worktree of its own"))
            (let ((labels (mapcar (lambda (entry)
                                    (cons (ecc-worktree--label entry) entry))
                                  entries)))
-             (ecc-worktree-entry-path
+             (ecc-git-worktree-entry-path
               (cdr (assoc (completing-read "Worktree: " (mapcar #'car labels)
                                            nil t)
                           labels)))))))

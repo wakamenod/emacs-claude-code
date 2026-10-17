@@ -57,7 +57,7 @@ interactive Emacs, and starting a CLI fails the test."
           (ecc-window--project-root-cache (make-hash-table :test #'equal))
           (ecc-window--project-source-buffers nil)
           (ecc-window--last-source-buffer nil)
-          (ecc-worktree--cache (make-hash-table :test #'equal))
+          (ecc-git--cache (make-hash-table :test #'equal))
           (started nil))
      (make-directory ecc-restore-test--one t)
      (make-directory ecc-restore-test--two t)
@@ -70,8 +70,8 @@ interactive Emacs, and starting a CLI fails the test."
                                   history))
      (unwind-protect
          (cl-letf (((symbol-function 'project-current) (lambda (&rest _) nil))
-                   ((symbol-function 'ecc-worktree-main) (lambda (_) nil))
-                   ((symbol-function 'ecc-worktree-branch) (lambda (_) nil))
+                   ((symbol-function 'ecc-git-main-worktree) (lambda (_) nil))
+                   ((symbol-function 'ecc-git-branch) (lambda (_) nil))
                    ((symbol-function 'ecc-proc-start)
                     (lambda (&rest _) (ert-fail "a CLI was started")))
                    ;; Recorded rather than failed: a Space starting its

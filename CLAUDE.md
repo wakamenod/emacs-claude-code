@@ -19,6 +19,10 @@ session, and `ecc-transient.el` the menu. The boundaries that are rules:
   a process of their own (`ecc-mcp.el`, `ecc-inline.el`, `ecc-review-pr.el`).
 - `ecc-model.el` — the session, the Turn > Step > Tool tree, the pending-request queue
   and the hooks — knows nothing of JSON, processes or drawing, and never sees the buffer.
+- `ecc-git.el` is what ecc asks git about a directory -- its repository, worktree and
+  branch, and the snapshot a session's review is taken against -- and depends on
+  `ecc-core` and `ecc-model` alone, so a module asks git without reaching
+  `ecc-worktree.el` or `ecc-review.el`.
 - `ecc-render.el` alone draws the transcript; `ecc-chat.el` holds the major mode, the
   movement and the keymaps. It defines them, and each module above it keeps its own
   commands in a keymap of its own made a parent of them (`ecc-chat-add-keymap-parent`),

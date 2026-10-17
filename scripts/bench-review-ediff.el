@@ -45,7 +45,7 @@
 
 (defun ecc-bench-review-run ()
   "Time the steps of opening an ediff review of `ecc-bench-review-range'."
-  (let* ((root (ecc-review-git-root default-directory))
+  (let* ((root (ecc-git-root default-directory))
          (trees (ecc-review-ediff--trees root ecc-bench-review-range))
          (cache (make-hash-table :test #'equal))
          (ediff-window-setup-function #'ediff-setup-windows-plain)

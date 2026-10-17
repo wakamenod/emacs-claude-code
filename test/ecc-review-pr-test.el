@@ -36,7 +36,7 @@
 (defun ecc-review-pr-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY and return its output, trimmed.
 The test fails when git does."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (string-trim (cdr result))))
@@ -577,7 +577,7 @@ Return the full ids of the three commits."
   (skip-unless (executable-find "git"))
   (ecc-review-pr-test--with-directory directory
     (seq-let (one two _three) (ecc-review-pr-test--three-branches directory)
-      (let ((root (ecc-review-git-root directory))
+      (let ((root (ecc-git-root directory))
             (short (lambda (id) (ecc-review-pr-test--git directory "rev-parse" "--short" id))))
         ;; D, w, u, s.
         (dolist (range '(nil "HEAD" "" staged))

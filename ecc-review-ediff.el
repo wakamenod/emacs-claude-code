@@ -140,6 +140,7 @@
 (require 'ediff)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-diff)
 (require 'ecc-window)
 (require 'ecc-review)
@@ -169,17 +170,17 @@ cannot resolve it."
          (side (lambda (spec)
                  (or (ecc-review-ediff--tree root spec) (funcall fail))))
          (now (lambda ()
-                (or (ecc-review-snapshot root)
+                (or (ecc-git-snapshot root)
                     (user-error "Cannot read the working tree of %s"
                                 (abbreviate-file-name root))))))
     (cond
      ;; What is staged: HEAD against the index.
      ((eq range 'staged)
       (cons (or (ecc-review--head-tree root) (funcall fail))
-            (or (ecc-review-snapshot root t) (funcall fail))))
+            (or (ecc-git-snapshot root t) (funcall fail))))
      ;; What is not staged yet: the index against the working tree.
      ((or (null range) (string-empty-p range))
-      (cons (or (ecc-review-snapshot root t) (funcall fail)) (funcall now)))
+      (cons (or (ecc-git-snapshot root t) (funcall fail)) (funcall now)))
      ;; One commit, X^!: its first parent against it, which is what
      ;; `git diff X^!' shows of a commit that is not a merge.
      ((string-match "\\`\\(.+\\)\\^!\\'" range)
@@ -214,7 +215,7 @@ AFTER the ids of the blobs the trees hold for PATH, nil for a tree that
 does not name it -- one side of a file created or deleted -- and the
 modes as git writes them, \"160000\" being a submodule, whose id is a
 commit and no blob.  ROOT is the repository, PATHS restrict it."
-  (pcase (apply #'ecc-review--git root
+  (pcase (apply #'ecc-git-run root
                 (append (list "diff" "--raw" "-z" "--no-renames" "--no-abbrev"
                               left right "--")
                         paths))
@@ -248,7 +249,7 @@ a git that fails here altogether, which is logged."
   (let* ((wanted (seq-uniq (seq-remove (lambda (blob) (gethash (cons 'raw blob) cache))
                                        (delq nil (copy-sequence blobs)))))
          (coding (or (car (find-operation-coding-system
-                           'call-process ecc-review-git-executable))
+                           'call-process ecc-git-executable))
                      (car default-process-coding-system)
                      'undecided)))
     (ecc-review--cat-file
@@ -279,7 +280,7 @@ created or deleted."
   (when blob
     (let ((key (cons 'raw blob)))
       (or (and cache (gethash key cache))
-          (pcase (ecc-review--git root "cat-file" "blob" blob)
+          (pcase (ecc-git-run root "cat-file" "blob" blob)
             (`(0 . ,output)
              (when cache (puthash key output cache))
              output)
@@ -4150,7 +4151,7 @@ the paths it keeps are relative to that."
                             (ecc-review--head-tree root)
                             (user-error "Cannot read the history of %s"
                                         (abbreviate-file-name root)))
-                        (or (ecc-review-snapshot root)
+                        (or (ecc-git-snapshot root)
                             (user-error "Cannot read the working tree of %s"
                                         (abbreviate-file-name root)))))))
     (append (list :left (car trees) :right (cdr trees)

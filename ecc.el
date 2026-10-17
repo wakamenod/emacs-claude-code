@@ -51,6 +51,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-proc)
 (require 'ecc-diff)
 (require 'ecc-table)

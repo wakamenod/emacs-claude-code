@@ -78,6 +78,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'ecc-core)
+(require 'ecc-git)
 (require 'ecc-review)
 
 (declare-function ecc-review-ediff-quit "ecc-review-ediff" (control))
@@ -363,7 +364,7 @@ order."
 
 (defun ecc-review-pr--has-commit-p (root oid)
   "Return non-nil when the repository of ROOT has the commit OID."
-  (eq 0 (car (ecc-review--git root "cat-file" "-e" (concat oid "^{commit}")))))
+  (eq 0 (car (ecc-git-run root "cat-file" "-e" (concat oid "^{commit}")))))
 
 (defun ecc-review-pr--repo-of-url (url)
   "Return (HOST . OWNER/REPO) of URL, a remote or a pull request, lowercased.
@@ -392,8 +393,8 @@ else the same owner and repository, else URL's repository itself, to be
 fetched from by its address."
   (let* ((want (or (ecc-review-pr--repo-of-url url)
                    (user-error "Cannot tell the repository of %s" url)))
-         (remotes (pcase (ecc-review--git root "config" "--get-regexp"
-                                          "^remote\\..*\\.url$")
+         (remotes (pcase (ecc-git-run root "config" "--get-regexp"
+                                      "^remote\\..*\\.url$")
                     (`(0 . ,output)
                      (mapcar (lambda (line)
                                (let ((pair (split-string line " ")))
@@ -425,7 +426,7 @@ on the way.  Return non-nil when something was fetched."
                       (let ((oid (plist-get pr key)))
                         (and (member oid oids) (not (ecc-review-pr--has-commit-p root oid))))))
            (fetch (lambda (refspec)
-                    (ecc-review-pr--run ecc-review-git-executable root
+                    (ecc-review-pr--run ecc-git-executable root
                                         "fetch" "--quiet" "--no-tags" "--recurse-submodules=no"
                                         "--refmap=" remote refspec)))
            (failed nil))
@@ -501,7 +502,7 @@ other is its base to its head.  What is missing is fetched first
              ;; --full-history with the path: of the commits that are no
              ;; merge, those that change no file are what a path leaves
              ;; out, and without it git would follow one side of a merge.
-             (ecc-review-pr--run ecc-review-git-executable root
+             (ecc-review-pr--run ecc-git-executable root
                                  "log" "--no-merges" "--full-history" "--reverse"
                                  "--no-color" "--format=%H%x1f%h%x1f%s"
                                  (format "%s..%s" base head) "--" ".")

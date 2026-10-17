@@ -87,7 +87,7 @@ What each sends is in `ecc-review-talk-test--sent', with the session."
 
 (defun ecc-review-talk-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY, failing the test when it fails."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (cdr result)))
@@ -101,7 +101,7 @@ What each sends is in `ecc-review-talk-test--sent', with the session."
   (ecc-review-talk-test--git directory "add" ".")
   (ecc-review-talk-test--git directory "commit" "-q" "-m" "init")
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (with-temp-file (concat directory "a.txt") (insert (ecc-review-talk-test--lines t)))
   (ecc-review-ediff-buffer session))
 
@@ -403,7 +403,7 @@ HUNK nil for none."
             (ecc-review-talk-test--git directory "add" ".")
             (ecc-review-talk-test--git directory "commit" "-q" "-m" "init")
             (setf (ecc-session-project-root one) directory)
-            (should (ecc-review-ensure-baseline one))
+            (should (ecc-git-ensure-baseline one))
             (dolist (file '("a.txt" "b.txt"))
               (with-temp-file (concat directory file)
                 (insert (ecc-review-talk-test--lines t) "\n")))

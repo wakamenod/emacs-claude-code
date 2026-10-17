@@ -63,6 +63,7 @@
 (require 'tab-bar)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-window)
 (require 'ecc-worktree)
 (require 'ecc-notify)
@@ -134,9 +135,9 @@ branches it generates is dropped, as it drops it."
 (defun ecc-space-of-root (root)
   "Return the Space of the project ROOT belongs to."
   (let* ((key (ecc-window-project-key root))
-         (main (ecc-worktree-main key))
+         (main (ecc-git-main-worktree key))
          (parent (and main (ecc-window-project-key main)))
-         (branch (ecc-worktree-branch key)))
+         (branch (ecc-git-branch key)))
     (make-ecc-space :key key :root key
                     :name (ecc-space--name key parent branch)
                     :parent parent :branch branch)))
@@ -541,7 +542,7 @@ repository is itself a linked worktree, and when its directory is gone."
               ((not (member parent (ecc-space--keys))))
               ((not (member parent ecc-space--ensuring-parent)))
               ((file-directory-p parent))
-              ((not (ecc-worktree-main parent))))
+              ((not (ecc-git-main-worktree parent))))
     (ecc-space-of-root parent)))
 
 (defun ecc-space--ensure-parent (space)
