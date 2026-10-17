@@ -55,6 +55,7 @@
 (require 'ecc-review-menu)
 (require 'ecc-search)
 (require 'ecc-dashboard)
+(require 'ecc-capabilities)
 (require 'ecc-inline)
 (require 'ecc-tui)
 (require 'ecc-lifecycle)

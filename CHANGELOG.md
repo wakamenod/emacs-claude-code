@@ -65,9 +65,21 @@ Verified against **Claude Code CLI 2.1.290**.
   same git commands run, with the same ten-second cache. A git that cannot
   be started at all is logged in `*ecc-log: git*`, where it used to be
   `*ecc-log: review*` or `*ecc-log: worktree*`.
+- The Capabilities buffer -- `ecc-capabilities-show`, `ecc-capabilities-mode`
+  and the rest of `ecc-capabilities-*` -- is in a file of its own,
+  `ecc-capabilities.el`, rather than in `ecc-dashboard.el`. Every name,
+  key and line it draws is as before. `C` in the dashboard is
+  `ecc-dashboard-capabilities`, which shows the session of the row at
+  point, so that the Capabilities buffer no longer asks the dashboard
+  which session it is about.
 
 ### Fixed
 
+- `C` in `ecc-menu`, and `M-x ecc-capabilities-show`, show the
+  Capabilities of the session they are called from, or of the most recent
+  one. Since 0.1.0 they stopped at "No session on this line" anywhere but
+  on a row of the dashboard, as the session was asked of the dashboard
+  first.
 - A Bash call that comes up open on the files it changed shows its
   `description:` and the diff, and no longer its `command:` or its `→`
   output. 0.4.2 cut a command of several lines to
