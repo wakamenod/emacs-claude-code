@@ -362,6 +362,23 @@ They were the other way round here, and the finger that had learnt
   (should (eq (lookup-key ecc-global-map (kbd "r")) #'ecc-resume))
   (should (eq (lookup-key ecc-global-map (kbd "R")) #'ecc-rename-session)))
 
+(ert-deftest ecc-dashboard-test-c-shows-the-capabilities-of-the-row ()
+  "`C' shows what the session of the row at point can do."
+  (should (eq (lookup-key ecc-dashboard-mode-map (kbd "C"))
+              #'ecc-dashboard-capabilities))
+  (ecc-dashboard-test--with-two-sessions a b
+    (ecc-dashboard-test--in-buffer
+     ;; The waiting session is the first row; the second is the idle one.
+     (ecc-dashboard-test--first-row)
+     (forward-line 1)
+     (should (eq a (ecc-dashboard-session-at-point)))
+     (let ((shown nil))
+       (cl-letf (((symbol-function 'ecc-capabilities-show)
+                  (lambda (session) (setq shown session))))
+         (call-interactively #'ecc-dashboard-capabilities))
+       (should (eq a shown)))
+     (ignore b))))
+
 ;;;; The spinner
 
 (ert-deftest ecc-dashboard-test-the-tick-draws-the-frame-alone ()
