@@ -75,6 +75,7 @@
 (require 'ecc-restore)
 (require 'ecc-search)
 (require 'ecc-capability)
+(require 'ecc-capabilities)
 (require 'ecc-dashboard)
 (require 'ecc-window)
 (require 'ecc-lifecycle)
