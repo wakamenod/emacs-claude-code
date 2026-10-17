@@ -637,6 +637,29 @@ ANSWER `fail' fails the test when anything is asked."
             (ecc-review-resume--save-at-exit)
             (should-not (ecc-review-resume-test--entry session))))))))
 
+(ert-deftest ecc-review-resume-test-a-reply-to-a-comment-not-saved-stands-alone ()
+  "A reply whose comment was sent, and so not saved, says nothing of it."
+  (skip-unless (executable-find "git"))
+  (ecc-review-resume-test--with-world
+    (ecc-test-with-fake-session session
+      (ecc-review-resume-test--with-directory directory
+        (ecc-review-resume-test--repo session directory)
+        (with-current-buffer (ecc-review-buffer session)
+          (ecc-review-resume-test--goto "+2")
+          (ecc-review-comment "sent")
+          (let ((sent (car ecc-review--notes)))
+            (setf (ecc-review-note-sent sent) t)
+            (ecc-review-add-note 'claude "an answer" nil (ecc-review-note-id sent)))
+          (ecc-review--draw-notes)
+          (ecc-review-close))
+        (with-current-buffer (ecc-review-resume (ecc-review-resume-test--entry session))
+          (let ((drawn (mapconcat (lambda (overlay)
+                                    (or (overlay-get overlay 'after-string)
+                                        (overlay-get overlay 'before-string) ""))
+                                  ecc-review--comments "")))
+            (should (string-search "an answer" drawn))
+            (should-not (string-search "reply to" drawn))))))))
+
 ;;;; What refuses
 
 (ert-deftest ecc-review-resume-test-a-session-not-in-this-emacs-is-refused ()

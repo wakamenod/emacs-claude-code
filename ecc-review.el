@@ -3072,7 +3072,9 @@ gone from the diff altogether."
                        (and (ecc-review-note-outdated note)
                             (format "[outdated, was %s] "
                                     (ecc-review-note-lines note)))
-                       (and (ecc-review-note-reply-to note)
+                       ;; Not when what it answers is not in the review:
+                       ;; a reply resumed whose comment was sent before.
+                       (and (ecc-review--parent note)
                             (not (ecc-review--drawn-under note))
                             (format "[reply to #%d] " (ecc-review-note-reply-to note))))))
     (concat
