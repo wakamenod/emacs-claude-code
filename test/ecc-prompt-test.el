@@ -964,7 +964,7 @@ OFFERED is bound to the list of labels the table held."
 (ert-deftest ecc-prompt-test-at-completion-keeps-project-files ()
   "A plain @ word is completed from the specials and the project files."
   (ecc-test-with-fake-session session
-    (cl-letf (((symbol-function 'ecc-prompt-project-files)
+    (cl-letf (((symbol-function 'ecc-visit-project-files)
                (lambda (_) '("readme.md" "src/reader.py"))))
       (ecc-prompt-test--in-buffer session
         (insert "見て @rea")
@@ -974,28 +974,6 @@ OFFERED is bound to the list of labels the table held."
           (should (equal (all-completions "@" (nth 2 capf))
                          '("@region" "@cursor" "@diagnostics"
                            "@readme.md" "@src/reader.py"))))))))
-
-(ert-deftest ecc-prompt-test-project-files-through-another-spelling ()
-  "Project files are relative to the session when the project spells it otherwise."
-  (ecc-prompt-test--with-tree tree
-    (let ((true (file-name-as-directory (file-truename tree)))
-          (link (concat (directory-file-name tree) "-link/")))
-      (make-symbolic-link (directory-file-name true) (directory-file-name link))
-      (unwind-protect
-          (ecc-test-with-fake-session session
-            (setf (ecc-session-project-root session) link)
-            ;; A project that names its root and files by the true name,
-            ;; as projectile does.
-            (cl-letf (((symbol-function 'project-current)
-                       (lambda (&rest _) (cons 'transient true)))
-                      ((symbol-function 'project-root) #'cdr)
-                      ((symbol-function 'project-files)
-                       (lambda (project &rest _)
-                         (list (concat (cdr project) "readme.md")
-                               (concat (cdr project) "src/a.el")))))
-              (should (equal (ecc-prompt-project-files session)
-                             '("readme.md" "src/a.el")))))
-        (delete-file (directory-file-name link))))))
 
 (ert-deftest ecc-prompt-test-at-completion-absolute-directory ()
   "An absolute path is completed from the directory it names, and only that."

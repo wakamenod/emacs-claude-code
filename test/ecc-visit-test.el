@@ -457,6 +457,29 @@ point and stops there."
                                             163)))))
           (delete-directory root t))))))
 
+(ert-deftest ecc-visit-test-project-files-through-another-spelling ()
+  "Project files are relative to the session when the project spells it otherwise."
+  (let* ((tree (file-name-as-directory (make-temp-file "ecc-visit-spelling" t)))
+         (true (file-name-as-directory (file-truename tree)))
+         (link (concat (directory-file-name tree) "-link/")))
+    (make-symbolic-link (directory-file-name true) (directory-file-name link))
+    (unwind-protect
+        (ecc-test-with-fake-session session
+          (setf (ecc-session-project-root session) link)
+          ;; A project that names its root and files by the true name,
+          ;; as projectile does.
+          (cl-letf (((symbol-function 'project-current)
+                     (lambda (&rest _) (cons 'transient true)))
+                    ((symbol-function 'project-root) #'cdr)
+                    ((symbol-function 'project-files)
+                     (lambda (project &rest _)
+                       (list (concat (cdr project) "readme.md")
+                             (concat (cdr project) "src/a.el")))))
+            (should (equal (ecc-visit-project-files session)
+                           '("readme.md" "src/a.el")))))
+      (delete-file (directory-file-name link))
+      (delete-directory tree t))))
+
 ;;;; Finding a path the model wrote
 
 (defmacro ecc-visit-test--with-tree (vars files &rest body)
@@ -480,7 +503,7 @@ buffers visiting the files are killed afterwards."
            (make-directory (file-name-directory path) t)
            (write-region (format "%s\n2\n3\n4\n5\n" file) nil path nil 'silent)))
        (unwind-protect
-           (cl-letf (((symbol-function 'ecc-prompt-project-files)
+           (cl-letf (((symbol-function 'ecc-visit-project-files)
                       (let ((root ,(cadr vars)))
                         (lambda (_session)
                           (mapcar (lambda (file) (file-relative-name file root))
@@ -528,7 +551,7 @@ VAR is bound to the list of candidate lists, the latest first."
   "A path that is there as written opens without a search.
 Against the session's directory first, then against the project root."
   (ecc-visit-test--with-tree (session root) '("src/a.el" "test/b.el")
-    (cl-letf (((symbol-function 'ecc-prompt-project-files)
+    (cl-letf (((symbol-function 'ecc-visit-project-files)
                (lambda (_) (error "Walked the project"))))
       (let ((src (expand-file-name "src/" root)))
         (should (equal (ecc-visit-find-written session "a.el" src)
@@ -540,7 +563,7 @@ Against the session's directory first, then against the project root."
   "A file the session handled, or one Emacs visits, is found without the project.
 The project's files are never listed when either has it."
   (ecc-visit-test--with-tree (session root) '("deep/x/handled.el" "deep/y/open.el")
-    (cl-letf (((symbol-function 'ecc-prompt-project-files)
+    (cl-letf (((symbol-function 'ecc-visit-project-files)
                (lambda (_) (error "Walked the project"))))
       (ecc-model-note-file session (expand-file-name "deep/x/handled.el" root) 'read)
       (should (equal (ecc-visit-find-written session "handled.el")
@@ -600,10 +623,10 @@ it is outside."
 
 (ert-deftest ecc-visit-test-the-project-as-project-el-sees-it ()
   "The project's files are the ones `project.el' lists, as @ completion has them."
-  (let ((listed (symbol-function 'ecc-prompt-project-files)))
+  (let ((listed (symbol-function 'ecc-visit-project-files)))
     (ecc-visit-test--with-tree (session root) '("test/foo-test.el")
       (let ((project-find-functions (list (lambda (_dir) (cons 'transient root)))))
-        (cl-letf (((symbol-function 'ecc-prompt-project-files) listed))
+        (cl-letf (((symbol-function 'ecc-visit-project-files) listed))
           (should (equal (ecc-visit-find-written session "foo-test.el")
                          (cons (expand-file-name "test/foo-test.el" root)
                                'project))))))))
@@ -772,7 +795,7 @@ What the search returns is filtered by the rule, and one match opens."
               (let ((path (expand-file-name file root-two)))
                 (make-directory (file-name-directory path) t)
                 (write-region "x\n" nil path nil 'silent)))
-            (cl-letf (((symbol-function 'ecc-prompt-project-files)
+            (cl-letf (((symbol-function 'ecc-visit-project-files)
                        (lambda (session)
                          (let ((root (ecc-session-project-root session)))
                            (mapcar (lambda (file) (file-relative-name file root))
