@@ -47,11 +47,11 @@
 
 ;; Showing a session goes through here from every level -- a question
 ;; answered, the dashboard, a recording opened, a restore -- and the
-;; buffer it shows, with the prompt in it, is made at the top by
-;; `ecc-session' and `ecc-chat'.  Moving the showing up would have each
-;; of those load the whole transcript to show one, so these two are
-;; loaded where they are called (`ecc-display-session').
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
+;; buffer it shows, with the prompt in it, is made above by `ecc-chat'.
+;; Moving the showing up would have each of those load the whole
+;; transcript to show one, so these two are loaded where they are called
+;; (`ecc-display-session').
+(declare-function ecc-session-ensure-buffer "ecc-chat" (session))
 (declare-function ecc-chat-goto-prompt "ecc-chat" ())
 
 ;; What a session window does under `spaces' is not decided here.  The
@@ -472,7 +472,7 @@ is left undedicated on purpose, so that a review may borrow it and
   "Show the buffer of SESSION in the window of ROLE and return that window.
 A window that is there already keeps its place: what is in it is
 replaced rather than a second window being opened."
-  (require 'ecc-session)
+  (require 'ecc-chat)
   ;; The tab line changes what a window shows with `switch-to-buffer',
   ;; which costs a side window its dedication; so does anything else the
   ;; user does in one.  Nothing else puts it back, so this watches, from
@@ -509,7 +509,7 @@ Where it is shown is `ecc-window--show-session'."
 Under `classic' the session goes into a window role, or to a plain
 `display-buffer' without `ecc-window-use-side-window'; `ecc-space'
 shows it in its Space under `spaces'."
-  (require 'ecc-session)
+  (require 'ecc-chat)
   (if (not ecc-window-use-side-window)
       (display-buffer (ecc-session-ensure-buffer session))
     (ecc-display-session-in-role session (ecc-window-role-for session))))
@@ -1221,7 +1221,7 @@ this Space already shows is selected there rather than shown twice.
 Under `classic' there is no Space for it to go to, and the session is
 put into this window whatever its project."
   (interactive (list (ecc-window--read-switch current-prefix-arg)))
-  (require 'ecc-session)
+  (require 'ecc-chat)
   (let* ((window (ecc-window--switch-target))
          (frame (and (window-live-p window) (window-frame window)))
          (buffer (ecc-session-buffer session))
