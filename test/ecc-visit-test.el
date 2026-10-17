@@ -157,9 +157,8 @@ the lines, as it does for an Edit."
         ;; A block after the first is the file it is under.
         (should (equal (ecc-visit-test--target-after "m3.txt (+1 -1)" "+new")
                        (cons (concat dir "m3.txt") 2)))
-        ;; The command and its output are not the diff.
-        (should-not (ecc-visit-test--target-after "✓ Bash" "command: sed"))
-        (should-not (ecc-visit-test--target-after "✓ Bash" "→ (Bash"))
+        ;; The description over the diff is not the diff.
+        (should-not (ecc-visit-test--target-after "✓ Bash" "description: Run"))
         (should-not (ecc-visit-test--target-after "✓ Bash" "… 3 more files"))
         ;; Two lines put in at the top later push the change down.
         (ecc-model-note-hunk session a nil nil

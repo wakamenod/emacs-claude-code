@@ -27,6 +27,22 @@ Verified against **Claude Code CLI 2.1.290**.
   `treesit-buffer-root-node` with no argument list, as the TAG argument
   0.4.4 gave it is newer than 29.1. Nothing changes when the package runs.
 
+### Fixed
+
+- A Bash call that comes up open on the files it changed shows its
+  `description:` and the diff, and no longer its `command:` or its `→`
+  output. 0.4.2 cut a command of several lines to
+  `ecc-render-result-max-lines`, but a command of one long line was never
+  cut: wrapped to five lines, with the output under it, it still stood
+  between the description and `Updated FILE (+n -m)`. The heading already
+  says the command. A call that failed keeps its output, which is what
+  says why. A call the CLI could not diff, which shows only a note such as
+  `(file diff unavailable for this command)`, keeps its command and its
+  output, as there is no diff to show instead. `RET` and `o` still show
+  the command, the output and the whole diff. Every other tool call, and
+  a Bash call that changed no file, is drawn as before, its inputs of
+  several lines cut as 0.4.2 cut them.
+
 ## [0.4.5] - 2026-10-14
 
 Verified against **Claude Code CLI 2.1.290**.
