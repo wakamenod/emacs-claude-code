@@ -2152,12 +2152,23 @@ own, not a disappearance."
          (aside (cdr split))
          (prompt (car split)))
     (if prompt
-        (progn
+        (let ((sender (ecc-turn-sender turn)))
+          ;; A message another session sent opens the turn as a prompt
+          ;; does, under a line that says who sent it and in a band of
+          ;; another colour: the user did not write it.
+          (when sender
+            (insert (ecc-render--hang
+                     (concat (propertize "✉ " 'face 'ecc-peer-heading-face)
+                             (propertize "Message from " 'face 'ecc-dim-face)
+                             (propertize (ecc-model-sender-name sender)
+                                         'face 'ecc-peer-heading-face))
+                     "  ")
+                    "\n"))
           ;; The prompt carries fenced blocks of its own: the quoted
           ;; region and the context Emacs attached, which are worth
           ;; the same colouring as the reply.
           (ecc-render--insert-band (ecc-render--fontify (concat id "/prompt") prompt)
-                                   "" 'ecc-user-face)
+                                   "" (if sender 'ecc-peer-face 'ecc-user-face))
           ;; The band stands at the depth of the turn, not of the
           ;; turn's children: it is the heading of the turn, and the
           ;; movement commands lean on that to tell a turn's children

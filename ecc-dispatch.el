@@ -54,6 +54,7 @@
 (require 'ecc-image)
 (require 'ecc-proc)
 (require 'ecc-diff)
+(require 'ecc-peer)
 
 (defvar ecc-turn-approve-tools '("Edit" "Write" "NotebookEdit")
   "Tools that a turn-wide approval covers.")
@@ -622,9 +623,12 @@ also echoes prompts back: the echo of one sent from here is an
 acknowledgement and nothing more, while one nobody here typed came from
 somewhere else -- a phone on the Remote Control bridge -- and is the
 prompt of the turn about to run (`ecc-dispatch--remote-prompt\=').  A
-text message under a parent_tool_use_id is the prompt a subagent was
+message another Claude session sent is the prompt of a turn as well,
+whether or not it is echoed (`ecc-dispatch--peer-prompt\=').  A text
+message under a parent_tool_use_id is the prompt a subagent was
 started with."
   (cond
+   ((ecc-dispatch--peer-prompt session message))
    ((ecc-protocol-replay-p message)
     (let ((content (alist-get 'content (alist-get 'message message))))
       (setf (alist-get 'replayed (ecc-session-progress session)) content)
@@ -703,6 +707,36 @@ rather than into a turn, and its `<summary>\=' is what the fold shows."
                                               text))
                                        (cons 'text text)))
       t)))
+
+(defun ecc-dispatch--peer-prompt (session message)
+  "Open a turn of SESSION for MESSAGE when another session sent it, else nil.
+The CLI starts that turn by itself (`ecc-protocol-peer-message\='), and
+marks the message synthetic, which is why `ecc-dispatch--remote-prompt\='
+would pass it by and leave the answer under a turn with no prompt.  Its
+body is the prompt, and the session it came from goes on the turn as
+its sender, for the renderer to name.  A turn already open with a prompt
+of its own keeps it, and the message becomes a note in it."
+  (when-let* ((peer (ecc-protocol-peer-message message)))
+    (let ((sender (ecc-peer-sender peer))
+          (body (alist-get 'body peer))
+          (turn (ecc-session-current-turn session)))
+      (ecc-log (ecc-session-name session) "message from %s: %s"
+               (ecc-model-sender-name sender) (ecc--truncate body 60))
+      (cond
+       ((null turn)
+        (setq turn (ecc-model-begin-turn session body sender)))
+       ((null (ecc-turn-prompt turn))
+        (setf (ecc-turn-prompt turn) body
+              (ecc-turn-sender turn) sender))
+       (t
+        (ecc-model-add-node session :type 'system :status 'done :parent turn
+                            :data (list (cons 'kind 'note)
+                                        (cons 'text
+                                              (format "Message from %s:\n%s"
+                                                      (ecc-model-sender-name sender)
+                                                      body))))))
+      (run-hook-with-args 'ecc-progress-hook session)
+      turn)))
 
 (defun ecc-dispatch--remote-prompt (session message content)
   "Show CONTENT of MESSAGE as a prompt of SESSION that Emacs did not send.
