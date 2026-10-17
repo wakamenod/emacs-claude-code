@@ -37,8 +37,8 @@
 ;; It sits below every module that starts or stops a session -- the
 ;; session buffer and its prompt, the dashboard, the Spaces, the
 ;; sidebar, the worktrees, the review and the menus -- and requires only
-;; what lies under them: the model, the process, the recordings and the
-;; windows.
+;; what lies under them: the model, the process, the recordings, the
+;; windows and the mode of a session buffer, `ecc-chat', which makes it.
 ;;
 ;; A session wants the whole package -- the MCP tools, the hints, the
 ;; notifications -- and some of it is registered when its file is
@@ -46,9 +46,10 @@
 ;; buffer wants it too: the modules above `ecc-chat' give it its keys.
 ;; The autoload of `ecc-start' loads this file alone, and so does that of
 ;; any command above it that starts a session, which is why every way
-;; into a session, and every session buffer, loads `ecc' first
-;; (`ecc--require-package').  The few functions of the modules above that
-;; are called here are the ones that loading brings.
+;; into a session loads `ecc' first, and why the function that makes a
+;; session buffer does too (`ecc--require-package', in `ecc-chat').  The
+;; few functions of the modules above that are called here are the ones
+;; that loading brings.
 
 ;;; Code:
 
@@ -64,27 +65,13 @@
 (require 'ecc-history)
 (require 'ecc-inline)
 (require 'ecc-window)
+(require 'ecc-chat)
 
 ;; Each of these is in a module that calls this one, and each is loaded
 ;; by `ecc--require-package' before it is called.
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-pending-indicator-mode "ecc-answer" (&optional arg))
 (declare-function ecc-notify-mode "ecc-notify" (&optional arg))
 (declare-function ecc-tab-line-mode "ecc-notify" (&optional arg))
-
-(defun ecc--require-package ()
-  "Load the whole of ecc, as a session or its buffer is about to be made.
-The features that register themselves when they are loaded -- the MCP
-tools, among them, which a CLI lists once when it starts -- are only
-there for a session that was opened with them loaded.  A session buffer
-gets its keys, its completion and its part of the mode line from the
-modules above `ecc-chat', which it cannot load itself: they require it.
-`ecc' is what requires every one of them, and it requires this file in
-turn, so it is loaded here at run time rather than at the top.  Every
-command that loads the package on its way in -- a menu, a restore, a
-worktree handed over -- calls this, so that the `require' of `ecc' is
-written once."
-  (require 'ecc))
 
 (defun ecc-project-root ()
   "Return the root of the project of the current buffer, or its directory."

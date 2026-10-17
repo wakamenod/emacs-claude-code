@@ -50,10 +50,13 @@
 ;; what opens, refreshes or resumes from the transcript, `ecc-review'
 ;; the comment and the edit on a request waiting for an answer, and the
 ;; queue, the hint, the terminal and the menu a key or two each.  They all
-;; build on this file, so the dependency runs one way, and
-;; `ecc-chat-mode' loads them before the buffer is used.  A key bound in
-;; the maps here, by a user after this file is loaded, wins over theirs
-;; whatever loads next.  The mode line is put together the same way:
+;; build on this file, so the dependency runs one way: `ecc-chat-mode'
+;; loads nothing.  What makes a session buffer is at the end of this
+;; file, `ecc-session-ensure-buffer', and it loads the whole package
+;; before it makes one (`ecc--require-package'), so that every buffer
+;; has the keys of every module whichever way it was reached.  A key
+;; bound in the maps here, by a user after this file is loaded, wins over
+;; theirs whatever loads next.  The mode line is put together the same way:
 ;; `ecc-hint' adds its part from `ecc-chat-mode-hook'.
 ;;
 ;; A request waiting for an answer is answered from the prompt region
@@ -316,8 +319,8 @@ row.  TAB folds, on this row as on every other.")
   :interactive nil
   ;; The modules above this one give the keymaps above their keys, and
   ;; the prompt region and the mode line their parts from
-  ;; `ecc-chat-mode-hook'.  What makes a session buffer loads them first
-  ;; (`ecc-session-ensure-buffer').
+  ;; `ecc-chat-mode-hook'.  This mode loads none of them; what makes a
+  ;; session buffer loads them first (`ecc-session-ensure-buffer').
   ;; Faces are applied when text is inserted, so no font lock is
   ;; wanted; `text-mode' turns none on.
   ;; The buffer is wrapped prose, so a line on the screen is the line a
@@ -1040,6 +1043,83 @@ and so on, the way the number keys of magit-section did."
   (unless (ecc-render-node-bounds "plans")
     (user-error "No plan of this session came with a file"))
   (ecc-render-goto-id "plans"))
+
+;;;; The buffer of a session
+
+(defun ecc--require-package ()
+  "Load the whole of ecc, as a session or its buffer is about to be made.
+The features that register themselves when they are loaded -- the MCP
+tools, among them, which a CLI lists once when it starts -- are only
+there for a session that was opened with them loaded.  A session buffer
+gets its keys, its completion and its part of the mode line from the
+modules above this file, which `ecc-chat-mode' does not load: they
+require it.  `ecc' is what requires every one of them, and it requires
+this file in turn, so it is loaded here at run time rather than at the
+top, and this is the one place in the package that does.  The buffer is
+made here (`ecc-session-ensure-buffer'), and every command that loads
+the package on its way in -- a session started, a menu, a restore, a
+worktree handed over -- calls this, so that the `require' of `ecc' is
+written once."
+  (require 'ecc))
+
+(defun ecc-session--forget-on-kill ()
+  "Stop and forget the session when its buffer is killed.
+Killing the buffer is taken as killing the session: the CLI is
+stopped, the session leaves the list, and its line buffer goes with
+it, so that nothing lingers in the dashboard as an exited session with
+no buffer.  An agent transcript shares the session but is
+not its buffer, so killing it does nothing."
+  (when-let* ((session ecc-render--session))
+    (when (and (eq (current-buffer) (ecc-session-buffer session))
+               ;; `ecc-kill' has forgotten the session already; the
+               ;; buffers are all that is left to it.
+               (eq (ecc-model-session (ecc-session-id session)) session))
+      (ecc-proc-stop session)
+      (ecc-model-remove-session session)
+      (ecc-image-cleanup-session session)
+      (let ((buffer (ecc-session-stream-buffer session)))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(defun ecc-session-directory (session)
+  "Return the directory SESSION works in.
+The root it was started in, which is what `ecc-window-session-project\='
+asks as well: the buffer, the sidebar and the Spaces must not disagree
+about where a session is.  The cwd the CLI reports comes second and
+only for a session that has no root of its own -- one read back from a
+recording.  It is not asked first because CLI 2.1.272 reports as the
+session cwd whatever directory the last Bash tool call left it in
+\(confirmed 2026-09-16), so it says where a tool ran and not where the
+session lives."
+  (when-let* ((directory (or (ecc-session-project-root session)
+                             (ecc-session-cwd session))))
+    (file-name-as-directory (expand-file-name directory))))
+
+(defun ecc-session-buffer-name (name)
+  "Return the name of the buffer of the session called NAME."
+  (format "*ecc: %s*" name))
+
+(defun ecc-session-ensure-buffer (session)
+  "Return the buffer of SESSION, creating and drawing it if needed."
+  (let ((buffer (ecc-session-buffer session)))
+    (unless (buffer-live-p buffer)
+      ;; The modules above this file give the buffer its keys, its
+      ;; completion and its part of the mode line, and not every way here
+      ;; has loaded them: a recording opened from a cold Emacs comes
+      ;; through `ecc-history' alone.
+      (ecc--require-package)
+      (setq buffer (get-buffer-create
+                    (ecc-session-buffer-name (ecc-session-name session))))
+      (setf (ecc-session-buffer session) buffer)
+      (with-current-buffer buffer
+        ;; The buffer lives in the project, so that project commands and
+        ;; `ecc-next-attention-in-project' see the right root.
+        (setq default-directory (or (ecc-session-directory session)
+                                    default-directory))
+        (ecc-chat-mode)
+        (add-hook 'kill-buffer-hook #'ecc-session--forget-on-kill nil t)
+        (ecc-render-setup session buffer)))
+    buffer))
 
 (provide 'ecc-chat)
 
