@@ -83,7 +83,7 @@ When the last session in a worktree ends, ecc offers to remove the worktree. **N
 
 ## Handing work to a session in a worktree
 
-With the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`), asking a session to do something in a worktree gives the model `start_worktree_session`. It names a branch and writes a brief. Emacs makes the worktree from `HEAD`, opens it as a Space, and starts a session there with the brief, adding the files the conversation touched, its plans, its recording and the uncommitted changes. Commit that work first, or say in the brief that it is uncommitted.
+With the [Emacs MCP server](/emacs-claude-code/start/installation/#enabling-the-mcp-server) on (`ecc-mcp-enabled`), asking a session to do something in a worktree gives the model `start_worktree_session`. It names a branch and writes a brief. Emacs makes the worktree from `HEAD`, opens it as a Space, and starts a session there with the brief, adding the files the conversation touched, its plans, its recording, the uncommitted changes and the address to report back to the session that handed the work over. Commit that work first, or say in the brief that it is uncommitted.
 
 If the model tries to make a worktree by itself, Emacs denies the request and points it to the tool. A draft that mentions a worktree goes out with one line reminding the model of the tool, shown folded under your prompt as "1 line Emacs added". A branch already checked out in another worktree is refused, so two sessions never share one. From Lisp the command is `ecc-worktree-delegate`.
 
