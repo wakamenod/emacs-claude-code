@@ -62,7 +62,9 @@ Verified against **Claude Code CLI 2.1.290**.
   its baseline from `ecc-git` alone, so with the Spaces off `ecc-start`
   no longer reaches into `ecc-worktree.el` to name a session, and neither
   it nor opening a recording declares a function of `ecc-review.el`. The
-  same git commands run, with the same ten-second cache.
+  same git commands run, with the same ten-second cache. A git that cannot
+  be started at all is logged in `*ecc-log: git*`, where it used to be
+  `*ecc-log: review*` or `*ecc-log: worktree*`.
 
 ### Fixed
 
