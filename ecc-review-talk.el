@@ -55,6 +55,11 @@
 ;;   once it is done, the calls in `ecc-tool-face' and the prompt in
 ;;   `ecc-user-face'.
 ;;
+;; - , and . step the pane back and on through the earlier turns, one
+;;   exchange at a time.  While an earlier one is shown the latest
+;;   streams on unseen, and M quotes the one shown with what it sends;
+;;   the next turn to begin brings the pane back to the latest.
+;;
 ;; A diff review shares the frame with the session, whose transcript is
 ;; beside it, so it has the keys and no pane.
 
@@ -168,6 +173,21 @@ covers alone, and `ecc-review-talk-region-no-lines-note' says so.")
 read them from the files, or from the patch of the hunks (review_hunks \
 with include_patch)."
   "What M says under the lines it names without their text.")
+
+(defvar ecc-review-talk-turn-label "This is about an earlier turn of ours."
+  "What the earlier turn M quotes is introduced by.
+M quotes the turn the reply pane shows while it is not the latest
+\(`ecc-review-talk--turn-block').")
+
+(defvar ecc-review-talk-turn-prompt-label "I asked:"
+  "What the prompt of the earlier turn M quotes follows.")
+
+(defvar ecc-review-talk-turn-reply-label "You said:"
+  "What Claude's words in the earlier turn M quotes follow.")
+
+(defvar ecc-review-talk-turn-limit 4000
+  "The most characters of Claude's words in an earlier turn M quotes.
+More are cut there, and an ellipsis marks the cut.")
 
 (defface ecc-review-talk-speaker-face
   '((t :inherit ecc-heading-face))
@@ -296,6 +316,44 @@ diff block.  Without the lines when all of them come to more than
        (unless with-lines
          (concat "\n\n" ecc-review-talk-region-no-lines-note))))))
 
+(defun ecc-review-talk--said (turn)
+  "Return what Claude said in TURN, in its own words: its text nodes, joined.
+Not a subagent's words, which are inside a call, nor the calls, nor
+what Emacs wrote in the turn on Claude's behalf."
+  (string-join
+   (seq-remove #'string-empty-p
+               (mapcar (lambda (node)
+                         (if (and (eq (ecc-node-type node) 'text)
+                                  (not (ecc-model-node-get node 'synthetic)))
+                             (string-trim (or (ecc-model-streaming-text node)
+                                              (ecc-model-node-get node 'text)
+                                              ""))
+                           ""))
+                       (ecc-turn-children turn)))
+   "\n\n"))
+
+(defun ecc-review-talk--turn-block (turn)
+  "Return the block that quotes TURN, an earlier turn, for M to send.
+The prompt on one line, short (`ecc-review-talk-turn-prompt-label'),
+without the blocks T, t and M put after what was typed, and what
+Claude said (`ecc-review-talk--said'), as a quote cut at
+`ecc-review-talk-turn-limit' characters.  Either is left out when the
+turn has none."
+  (let ((prompt (car (split-string (or (ecc-turn-prompt turn) "") "\n\n---\n")))
+        (said (ecc-review-talk--said turn)))
+    (when (> (length said) ecc-review-talk-turn-limit)
+      (setq said (concat (substring said 0 ecc-review-talk-turn-limit) "…")))
+    (concat "\n\n---\n" ecc-review-talk-turn-label
+            (unless (string-blank-p prompt)
+              (format "\n\n%s %s" ecc-review-talk-turn-prompt-label
+                      (ecc--truncate (ecc-render--one-line prompt) 200)))
+            (unless (string-empty-p said)
+              (concat "\n\n" ecc-review-talk-turn-reply-label "\n"
+                      (mapconcat (lambda (line)
+                                   (if (string-empty-p line) ">" (concat "> " line)))
+                                 (split-string said "\n")
+                                 "\n"))))))
+
 (defun ecc-review-talk-send (text)
   "Send TEXT to the session of this review as a prompt, and show the pane.
 Sent the way `ecc-send' sends a prompt typed in the minibuffer, which
@@ -324,28 +382,40 @@ asking (`ecc-review-talk--hunks'), for Claude to plan the stops from."
   (ecc-review-talk-send (concat ecc-review-talk-next-prompt (ecc-review-talk--where))))
 
 ;;;###autoload
-(defun ecc-review-talk-message (text)
+(defun ecc-review-talk-message (text &optional turn)
   "Send TEXT, read in the minibuffer, to the session of this review.
 With the region active, the lines it selects go with it
 \(`ecc-review-talk--region-block'), and the mark is deactivated once
 it is sent; in an ediff review, the region of the window the keyboard
 is in.  Otherwise, or when the region holds no line of the files --
 only headers, or the separators of an ediff review -- where the user is
-in the review goes with it (`ecc-review-talk--where')."
+in the review goes with it (`ecc-review-talk--where').
+
+TURN, an earlier turn, is quoted after TEXT and before the lines or
+the place (`ecc-review-talk--turn-block').  Interactively it is the one
+the reply pane shows while that is not the latest (\\`,' in the
+review), and the prompt says which.  It is taken as the prompt is read,
+so a turn that begins meanwhile changes nothing of what is sent."
   (interactive
    (let* ((name (ecc-session-name (ecc-review-talk--session)))
-          (count (length (plist-get (ecc-review-region) :lines))))
+          (count (length (plist-get (ecc-review-region) :lines)))
+          (viewed (ecc-review-talk--viewed))
+          (notes (delq nil (list (when viewed
+                                   (format "about turn %d/%d" (cadr viewed) (cddr viewed)))
+                                 (unless (zerop count)
+                                   (format "%d line%s selected"
+                                           count (if (= count 1) "" "s")))))))
      (list (read-string (format "To %s%s: " name
-                                (if (zerop count)
-                                    ""
-                                  (format " (%d line%s selected)"
-                                          count (if (= count 1) "" "s"))))))))
+                                (if notes (format " (%s)" (string-join notes ", ")) "")))
+           (car viewed))))
   (when (string-empty-p (string-trim text))
     (user-error "Prompt is empty"))
   (ecc-review-talk--session)
   (let ((region (ecc-review-region)))
-    (ecc-review-talk-send (concat text (or (ecc-review-talk--region-block region)
-                                           (ecc-review-talk--where))))
+    (ecc-review-talk-send (concat text
+                                  (when turn (ecc-review-talk--turn-block turn))
+                                  (or (ecc-review-talk--region-block region)
+                                      (ecc-review-talk--where))))
     (when region
       (with-current-buffer (plist-get region :buffer)
         (deactivate-mark)))))
@@ -433,7 +503,18 @@ other change writes the pane again.")
 
 (defvar-local ecc-review-talk--shown-turn nil
   "The turn this pane was last written from.
-Written from another, every window of the pane follows its end again.")
+Written from another, every window of the pane follows its end again,
+or, an earlier turn, shows its start.")
+
+(defvar-local ecc-review-talk--viewing nil
+  "The earlier turn this pane shows, or nil while it shows the latest.
+Set by \\`,' and \\`.' (`ecc-review-talk-previous-turn'),
+and cleared when another turn begins, which the pane follows again
+\(`ecc-review-talk--on-turn').  While it is set, nothing of the latest
+turn writes the pane; what Claude waits for still does.")
+
+(defvar-local ecc-review-talk--header-cache nil
+  "The header line last fitted to the width of a window: (WIDTH . TEXT).")
 
 (defvar-local ecc-review-talk--kept nil
   "Where the side window of the pane was read from as it was taken down.
@@ -453,6 +534,8 @@ turn begins.")
     (define-key map (kbd "d") #'ecc-review-talk-scroll-on)
     (define-key map (kbd "DEL") #'ecc-review-talk-scroll-back)
     (define-key map (kbd "SPC") #'ecc-review-talk-scroll-on)
+    (define-key map (kbd ",") #'ecc-review-talk-previous-turn)
+    (define-key map (kbd ".") #'ecc-review-talk-next-turn)
     map)
   "Keymap of `ecc-review-talk-mode'.")
 
@@ -471,7 +554,8 @@ turn begins.")
   (setq ecc-render--markdown-cache (make-hash-table :test #'equal)
         ecc-render--markdown-used nil)
   (add-to-invisibility-spec '(ecc-markup . nil))
-  (setq mode-line-format '(:eval (ecc-review-talk--mode-line)))
+  (setq mode-line-format '(:eval (ecc-review-talk--mode-line))
+        header-line-format '(:eval (ecc-review-talk--header-line)))
   (add-hook 'kill-buffer-hook #'ecc-review-talk--forget nil t))
 
 (defun ecc-review-talk--forget ()
@@ -479,16 +563,51 @@ turn begins.")
   (setq ecc-review-talk--panes (delq (current-buffer) ecc-review-talk--panes)))
 
 (defun ecc-review-talk--mode-line ()
-  "Return the mode line of this reply pane: whose replies, and the state."
-  (let ((session ecc-review-talk--of))
+  "Return the mode line of this reply pane: whose replies, which turn, the state.
+The turn is in `warning' while it is an earlier one, which the pane
+holds on to as the latest goes on."
+  (let* ((session ecc-review-talk--of)
+         (number (ecc-review-talk--number (ecc-review-talk--turn))))
     (concat " "
             (propertize "Claude" 'face 'ecc-review-talk-speaker-face)
             (propertize (format " · %s · " (ecc-session-name session)) 'face 'ecc-dim-face)
+            (when number
+              (concat (propertize (format "turn %d/%d" (car number) (cdr number))
+                                  'face (if ecc-review-talk--viewing 'warning 'ecc-dim-face))
+                      (propertize " · " 'face 'ecc-dim-face)))
             (pcase (ecc-session-state session)
               ('running "replying…")
               ((or 'waiting-permission 'waiting-question 'waiting-plan)
                (propertize "waiting for you: y answers" 'face 'ecc-pending-face))
               (state (format "%s" state))))))
+
+(defvar ecc-review-talk-header-keys
+  '((", ." . "turns") ("u d" . "scroll") ("M" . "message") ("y" . "answer")
+    ("T" . "tour") ("t" . "next"))
+  "The keys the header line of the reply pane shows: (KEY . WHAT).
+They are typed in the review, not in the pane.  In the order they are
+shown: a pane too narrow for them all leaves them out from the last.")
+
+(defun ecc-review-talk--header-line (&optional window)
+  "Return the header line of this reply pane in WINDOW, or the selected one.
+The keys of `ecc-review-talk-header-keys', as many as fit the width,
+the first cut at the edge when not even it does.  What it comes to is
+kept for the next draw of the same width (`ecc-review-talk--header-cache')."
+  (let ((width (window-width window)))
+    (if (eql (car ecc-review-talk--header-cache) width)
+        (cdr ecc-review-talk--header-cache)
+      (let* ((pieces (mapcar (lambda (key)
+                               (concat (propertize (car key) 'face 'bold) " "
+                                       (propertize (cdr key) 'face 'ecc-dim-face)))
+                             ecc-review-talk-header-keys))
+             (join (lambda (pieces) (concat " " (string-join pieces "  "))))
+             (text (funcall join pieces)))
+        (while (and (cdr pieces) (> (string-width text) width))
+          (setq pieces (butlast pieces)
+                text (funcall join pieces)))
+        (setq text (truncate-string-to-width text width))
+        (setq ecc-review-talk--header-cache (cons width text))
+        text))))
 
 (defun ecc-review-talk--pane-buffer (review)
   "Return the reply pane of REVIEW, made when it has none."
@@ -780,14 +899,20 @@ A pair of places (`ecc-review-talk--place-of'): its start and its point."
 
 (defun ecc-review-talk--put (window reading)
   "Put WINDOW of this pane back to READING, or at the end when it is nil.
-READING is what `ecc-review-talk--reading' returned before a change.
+READING is what `ecc-review-talk--reading' returned before a change, or
+`start', which shows the start of the pane.
 The start goes to the beginning of the row of the screen its line and
 column fall in, and point is kept where it was while that is in the
 window, else put at the start: redisplay would scroll the window to a
 point above the start or below its last row -- a window shorter than
 the one point was kept in, as | gives the pane -- and lose the start."
-  (if (null reading)
-      (ecc-review-talk--window-to-the-end window)
+  (cond
+   ((null reading)
+    (ecc-review-talk--window-to-the-end window))
+   ((eq reading 'start)
+    (set-window-start window (point-min) t)
+    (set-window-point window (point-min)))
+   (t
     (let* ((start (save-excursion
                     (goto-char (ecc-review-talk--position-of (car reading)))
                     (vertical-motion 0 window)
@@ -800,7 +925,7 @@ the one point was kept in, as | gives the pane -- and lose the start."
       (set-window-start window start t)
       (set-window-point window (if (or (< point start) (and below (>= point below)))
                                    start
-                                 point)))))
+                                 point))))))
 
 ;;;;; Scrolling it
 
@@ -856,6 +981,63 @@ scrolled back any other way."
 Reaching the end, it follows what comes in again."
   (interactive)
   (ecc-review-talk--scroll nil))
+
+;;;;; Going back through the turns
+
+(defun ecc-review-talk--number (turn)
+  "Return (N . OF): TURN is the Nth of the OF turns of this pane's session.
+Nil for no turn, or one the session no longer has.  Run in the pane."
+  (let* ((turns (ecc-session-turns ecc-review-talk--of))
+         (n (and turn (cl-position turn turns :test #'eq))))
+    (and n (cons (1+ n) (length turns)))))
+
+(defun ecc-review-talk--viewed ()
+  "Return the earlier turn the reply pane of this review shows, as (TURN N . OF).
+Nil while the pane shows the latest turn, and in a review with no pane."
+  (when (buffer-live-p ecc-review-talk--pane)
+    (with-current-buffer ecc-review-talk--pane
+      (when-let* ((turn ecc-review-talk--viewing)
+                  (number (ecc-review-talk--number turn)))
+        (cons turn number)))))
+
+(defun ecc-review-talk--step-pane ()
+  "Return the reply pane the turn keys step through, or signal there is none.
+The pane itself, typed there, else the pane of this review."
+  (if (derived-mode-p 'ecc-review-talk-mode)
+      (current-buffer)
+    (ecc-review-talk--session)
+    (if (buffer-live-p ecc-review-talk--pane)
+        ecc-review-talk--pane
+      (user-error "This review shows no reply pane"))))
+
+(defun ecc-review-talk--step (by)
+  "Show the turn BY turns on from the one the reply pane shows, -1 the one before.
+Reaching the latest, the pane follows it again."
+  (let ((pane (ecc-review-talk--step-pane)))
+    (with-current-buffer pane
+      (let* ((turns (ecc-session-turns ecc-review-talk--of))
+             (n (car (ecc-review-talk--number (ecc-review-talk--turn))))
+             (to (and n (+ n -1 by))))
+        (cond ((null n) (user-error "Nothing from Claude yet"))
+              ((< to 0) (user-error "At the first turn"))
+              ((>= to (length turns)) (user-error "At the latest turn")))
+        (setq ecc-review-talk--viewing (and (< to (1- (length turns))) (nth to turns)))
+        (ecc-review-talk--write pane)
+        (force-mode-line-update)))))
+
+(defun ecc-review-talk-previous-turn ()
+  "Show the turn before the one the reply pane shows: its prompt and the reply.
+The pane stays on it as Claude goes on, and \\`M'
+\(`ecc-review-talk-message') quotes it with what it sends, until \\`.'
+steps back to the latest or another turn begins."
+  (interactive)
+  (ecc-review-talk--step -1))
+
+(defun ecc-review-talk-next-turn ()
+  "Show the turn after the one the reply pane shows.
+Reaching the latest, the pane follows what comes in again."
+  (interactive)
+  (ecc-review-talk--step 1))
 
 ;;;;; What it says
 
@@ -1000,23 +1182,33 @@ while it streams, its Markdown fontified over that once it is done."
         (setq first nil))
       (setq ecc-review-talk--tail nil))))
 
-(defun ecc-review-talk--turn (session)
-  "Return the turn of SESSION the reply pane shows: the latest one."
+(defun ecc-review-talk--latest (session)
+  "Return the latest turn of SESSION, the one a reply pane follows."
   (car (last (ecc-session-turns session))))
 
+(defun ecc-review-talk--turn ()
+  "Return the turn this reply pane shows: the earlier one chosen, else the latest.
+Run in the pane."
+  (or ecc-review-talk--viewing (ecc-review-talk--latest ecc-review-talk--of)))
+
 (defun ecc-review-talk--write (pane)
-  "Write the reply PANE again from its session's latest turn.
+  "Write the reply PANE again from the turn it shows (`ecc-review-talk--turn').
 A window that showed the end of the pane shows its end again, and one
 that did not shows the lines it showed (`ecc-review-talk--reading').
 Written from a turn other than the last time, every window follows the
-end, and so does the window the pane is shown in next."
+end, and so does the window the pane is shown in next; an earlier turn
+is shown from its start instead.  An earlier turn the session no longer
+has -- another conversation taken over in its window -- gives the latest."
   (with-current-buffer pane
+    (unless (memq ecc-review-talk--viewing (ecc-session-turns ecc-review-talk--of))
+      (setq ecc-review-talk--viewing nil))
     (let* ((session ecc-review-talk--of)
-           (turn (ecc-review-talk--turn session))
+           (turn (ecc-review-talk--turn))
            (new-turn (not (eq turn ecc-review-talk--shown-turn)))
            (windows (mapcar (lambda (window)
-                              (cons window (unless new-turn
-                                             (ecc-review-talk--reading window))))
+                              (cons window (cond ((not new-turn)
+                                                  (ecc-review-talk--reading window))
+                                                 (ecc-review-talk--viewing 'start))))
                             (get-buffer-window-list pane nil t)))
            (inhibit-read-only t))
       (when new-turn
@@ -1067,9 +1259,22 @@ leaves the list as it is killed (`ecc-review-talk--forget')."
   (seq-filter (lambda (pane) (eq (buffer-local-value 'ecc-review-talk--of pane) session))
               ecc-review-talk--panes))
 
+(defun ecc-review-talk--following (session)
+  "Return the reply panes of SESSION that show its latest turn."
+  (seq-remove (lambda (pane) (buffer-local-value 'ecc-review-talk--viewing pane))
+              (ecc-review-talk--panes-of session)))
+
 (defun ecc-review-talk--on-change (session &rest _)
-  "Write the panes of SESSION again: a turn began, or a request came or went."
+  "Write the panes of SESSION again: a request came or went.
+An earlier turn shown lists it under it all the same, for y to answer."
   (mapc #'ecc-review-talk--write (ecc-review-talk--panes-of session)))
+
+(defun ecc-review-talk--on-turn (session &rest _)
+  "Bring the panes of SESSION back to its latest turn, which has just begun."
+  (dolist (pane (ecc-review-talk--panes-of session))
+    (with-current-buffer pane
+      (setq ecc-review-talk--viewing nil))
+    (ecc-review-talk--write pane)))
 
 (defun ecc-review-talk--shown-p (session node)
   "Return non-nil when NODE of SESSION is one the reply pane shows.
@@ -1078,7 +1283,7 @@ subagent's nodes, which the pane never shows, nor a request, which
 `ecc-request-added-hook\\=' and `ecc-request-resolved-hook\\=' bring --
 answering one changes its node as well, and the pane would be written
 twice."
-  (let ((turn (ecc-review-talk--turn session))
+  (let ((turn (ecc-review-talk--latest session))
         (parent (ecc-node-parent node)))
     (and (memq (ecc-node-type node) '(text tool agent))
          (or (eq parent turn)
@@ -1087,19 +1292,21 @@ twice."
                   (eq (ecc-node-parent parent) turn))))))
 
 (defun ecc-review-talk--on-node (session node)
-  "Write the panes of SESSION again when NODE is one they show."
-  (when-let* ((panes (ecc-review-talk--panes-of session)))
+  "Write the panes of SESSION again when NODE is one they show.
+A pane showing an earlier turn is left as it is."
+  (when-let* ((panes (ecc-review-talk--following session)))
     (when (ecc-review-talk--shown-p session node)
       (mapc #'ecc-review-talk--write panes))))
 
 (defun ecc-review-talk--on-delta (session node text)
   "Append TEXT, which streamed into NODE of SESSION, to the panes showing it.
 Only what Claude says in the turn itself: a subagent's text and
-thinking are not in the pane.  Appended where the node ends, when it is
-what the pane ends with, else the pane is written again."
-  (when-let* ((panes (ecc-review-talk--panes-of session)))
+thinking are not in the pane, nor is the latest turn in a pane showing
+an earlier one.  Appended where the node ends, when it is what the pane
+ends with, else the pane is written again."
+  (when-let* ((panes (ecc-review-talk--following session)))
     (when (and (eq (ecc-node-type node) 'text)
-               (eq (ecc-node-parent node) (ecc-review-talk--turn session)))
+               (eq (ecc-node-parent node) (ecc-review-talk--latest session)))
       (dolist (pane panes)
         (if (and (eq (buffer-local-value 'ecc-review-talk--tail pane) node)
                  (marker-position (buffer-local-value 'ecc-review-talk--tail-end pane)))
@@ -1115,7 +1322,8 @@ what the pane ends with, else the pane is written again."
                 (mapc #'ecc-review-talk--window-to-the-end following)))
           (ecc-review-talk--write pane))))))
 
-(dolist (hook '(ecc-turn-started-hook ecc-request-added-hook ecc-request-resolved-hook))
+(add-hook 'ecc-turn-started-hook #'ecc-review-talk--on-turn)
+(dolist (hook '(ecc-request-added-hook ecc-request-resolved-hook))
   (add-hook hook #'ecc-review-talk--on-change))
 
 (add-hook 'ecc-node-added-hook #'ecc-review-talk--on-node)
