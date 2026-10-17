@@ -28,7 +28,10 @@ session, and `ecc-transient.el` the menu. The boundaries that are rules:
   commands in a keymap of its own made a parent of them (`ecc-chat-add-keymap-parent`),
   so that a user's binding wins: `ecc-chat.el` names no command of a module above it.
   What such a module adds to a chat buffer -- the prompt's completion, the hint's part of
-  the mode line -- it adds from `ecc-chat-mode-hook`.
+  the mode line -- it adds from `ecc-chat-mode-hook`. `ecc-chat-mode` loads nothing; the
+  function that makes a session buffer, `ecc-session-ensure-buffer`, lives in
+  `ecc-chat.el` and loads the whole package first (`ecc--require-package`, the one
+  run-time `(require 'ecc)` in the package), so every buffer has every module's keys.
   The prompt region lives after `ecc-render--prompt-start` in the same buffer, and no
   redraw deletes past it.
 - `ecc-window.el` does not require `ecc-space.el`: the Spaces are built on top of the

@@ -75,6 +75,21 @@ Verified against **Claude Code CLI 2.1.290**.
   25. The keys are unchanged, since every session buffer is made with the
   whole package loaded, and a `c` or `e` a user binds in
   `ecc-request-section-map` still wins over the review's.
+- A session buffer is made in `ecc-chat.el`: `ecc-session-ensure-buffer`,
+  `ecc-session-directory`, `ecc-session-buffer-name` and the function that
+  forgets a session whose buffer is killed come out of `ecc-session.el`,
+  and `ecc--require-package` out of `ecc-lifecycle.el`, under the same
+  names. `ecc-lifecycle`, `ecc-history`, `ecc-restore` and `ecc-space`
+  require `ecc-chat`, which sits below all of them, and no longer declare
+  the function or load `ecc-session` at run time to call it; opening a
+  recording loads `ecc-chat` and `ecc-render` with `ecc-history` instead
+  of on the way to the first buffer. `ecc-chat-mode` still loads nothing,
+  and the package is loaded at the same moments as before: making a
+  session buffer loads all of it first, as every way into a session does,
+  and `ecc-chat.el` is now the one file that loads `ecc` at run time.
+  Resuming a session no longer loads `ecc-review` on its own before it
+  takes the baseline, which has come from `ecc-git` since that module
+  was added.
 
 ### Fixed
 
