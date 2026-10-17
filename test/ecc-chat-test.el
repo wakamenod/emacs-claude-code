@@ -28,6 +28,7 @@
 (require 'ecc-hint)
 (require 'ecc-tui)
 (require 'ecc-transient)
+(require 'ecc)
 
 (defun ecc-chat-test--replay (session name prompt)
   "Replay fixture NAME into SESSION under PROMPT, allowing every request."

@@ -19,6 +19,7 @@
 (require 'ecc-history)
 (require 'ecc-registry)
 (require 'ecc-session)
+(require 'ecc)
 
 (defconst ecc-dashboard-test-recording "24a1aa86-d53f-4457-b09e-4f4caf450f03"
   "Id of the recording test/fixtures/history/session.jsonl holds.")
