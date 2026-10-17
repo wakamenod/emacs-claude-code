@@ -100,7 +100,7 @@ Hunks are as small as the change, since a comment carries its whole hunk. `(setq
 | `]` / `[` | Next / previous commit of a [pull request](#a-pull-request-one-commit-at-a-time) |
 | `C-c C-c` | [Send](#sending-comments) the comments not sent yet as a prompt (`C-u C-c C-c` to edit it first) |
 | `C-c C-a` | Send the comments of every commit of the pull request |
-| `C-c C-k` | Close the review, keeping the comments not sent for [`R`](#resuming-a-review) |
+| `C-c C-k` | Drop the review, its comments and its [saved copy](#resuming-a-review) (asks when comments are not sent) |
 | `q` | Bury the buffer |
 | `?` | List every key of the review |
 
@@ -144,13 +144,15 @@ Sent comments stay in the review, dimmed in `ecc-review-sent-comment-face`, so C
 
 ![The review just after C-c C-c: the comment under the line of summary.py dimmed, and the header line counting one comment of yours, sent](../../../assets/review-sent.png)
 
-The next `C-c C-c` sends only the comments you made since; when there are none, it says there is nothing to send. Editing a sent comment makes it unsent, so the next send carries its new text. `C-c C-k` closes the review and `q` buries it.
+The next `C-c C-c` sends only the comments you made since; when there are none, it says there is nothing to send. Editing a sent comment makes it unsent, so the next send carries its new text. `C-c C-k` drops the review and `q` buries it.
 
 ## Resuming a review
 
-When you close a review, or Emacs exits with it open, ecc keeps the last review of each session with the comments you have not sent. `R` in the review menu (`C-c c D R`), or `M-x ecc-review-resume`, lists them, as in `api · since the session started · src/app.py:42 · 2 unsent comments · 2026-10-17 14:03`. Choosing one opens the review again in its style, diff or ediff, with the comments on their lines and point on the line you were reading. A comment whose line has changed since comes back outdated.
+When you kill a review buffer, close an ediff review with `q`, or Emacs exits with a review open, ecc keeps the review with the comments you have not sent. It keeps the last review of each session for each thing it compares: a session's review of what it changed and its review of `main...HEAD`, or of other files, are kept apart. `R` in the review menu (`C-c c D R`), or `M-x ecc-review-resume`, lists them, as in `api · since the session started · src/app.py:42 · 2 unsent comments · 2026-10-17 14:03`. Choosing one opens the review again in its style, diff or ediff, with the comments on their lines and point on the line you were reading. A comment whose line has changed since comes back outdated.
 
-The session has to be open in this Emacs. After a restart, bring it back with `M-x ecc-restore` first. When a review of that session comparing the same thing is open, `R` goes to it. A review of what the session changed since it started compares with the working tree as it was when the session started. Git keeps that for two weeks, and after that the review cannot be resumed. A review you open the ordinary way replaces the saved one only once you comment in it.
+The session has to be open in this Emacs. After a restart, bring it back with `M-x ecc-restore` first. When a review of that session comparing the same thing on the same files is open, `R` goes to it. A review of what the session changed since it started compares with the working tree as it was when the session started. Git keeps that for two weeks, and after that the review cannot be resumed. A review you open the ordinary way replaces the saved one only once you comment in it.
+
+`C-c C-k` drops a review and its saved copy, so `R` no longer offers it. When the review has comments you have not sent, it asks first. Answering no leaves the review open.
 
 ## Following the files
 
