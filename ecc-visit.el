@@ -75,6 +75,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'pulse)
+(require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-diff)
@@ -83,8 +84,6 @@
 (require 'ecc-markdown)
 (require 'ecc-window)
 (require 'ecc-image)
-
-(declare-function ecc-prompt-project-files "ecc-prompt" (session))
 
 ;;;; Reading a diff line back
 
@@ -510,15 +509,27 @@ connection, and a buffer of one is all that could have named it."
   (when-let* ((root (and session (ecc-session-project-root session))))
     (file-name-as-directory (expand-file-name root))))
 
+(defun ecc-visit-project-files (session)
+  "Return the files of the project of SESSION, relative to its root.
+The project can spell that root another way: projectile names its files
+from the true name, and on macOS a session in /tmp/x/ had every file
+offered as ../../../private/tmp/x/readme.md (2026-10-11).  When the two
+are the same directory, the project's own spelling is what the names
+are taken against."
+  (let* ((root (ecc-session-project-root session))
+         (project (and root (project-current nil root))))
+    (when project
+      (let* ((root (expand-file-name root))
+             (own (expand-file-name (project-root project)))
+             (base (if (file-equal-p root own) own root)))
+        (mapcar (lambda (file) (file-relative-name file base))
+                (project-files project))))))
+
 (defun ecc-visit--project-files (session root)
   "Return the files of the project of SESSION, absolute under ROOT.
-They are the list @ completion offers (`ecc-prompt-project-files\\=').
-That file requires `ecc-session\\=', which requires this one, so it is
-loaded when it is asked and not at the top: by the time RET is pressed
-on a transcript, the prompt is there already."
-  (require 'ecc-prompt)
+They are the list @ completion offers (`ecc-visit-project-files\\=')."
   (mapcar (lambda (file) (expand-file-name file root))
-          (ecc-prompt-project-files session)))
+          (ecc-visit-project-files session)))
 
 (defun ecc-visit--steps (from to)
   "Return how many directories there are to walk from FROM to TO."

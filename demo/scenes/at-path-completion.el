@@ -108,7 +108,7 @@ here, as the command loop would."
          (project (project-current nil root)))
     (demo-say (format "session root %S; project %S; project files %S"
                       root project
-                      (ecc-prompt-project-files demo-session))))
+                      (ecc-visit-project-files demo-session))))
   nil)
 
 (defun demo-shown (&optional names)
