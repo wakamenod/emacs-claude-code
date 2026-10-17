@@ -56,13 +56,6 @@
 Choosing \"plan\" sends setMode plan back with the approval; whether
 the CLI stays in plan mode after ExitPlanMode is not verified.")
 
-(defcustom ecc-plan-default-mode "acceptEdits"
-  "Permission mode switched to when a plan is approved without choosing one.
-Nil approves without asking for a mode change, which the CLI answers
-by leaving plan mode for the default mode."
-  :type '(choice (const :tag "Leave it to the CLI" nil) string)
-  :group 'ecc)
-
 (defvar ecc-plan-auto-open t
   "Non-nil opens the review buffer as soon as a plan arrives.
 Only done while the transcript of the session is on screen, so that a
@@ -194,7 +187,7 @@ none gives nil."
                          "?"))
                'face 'ecc-heading-face)
    (propertize (format "  ·  next mode: %s  ·  comments: %d%s"
-                       (or ecc-plan--mode ecc-plan-default-mode "(CLI default)")
+                       (or ecc-plan--mode ecc-perm-plan-default-mode "(CLI default)")
                        (length ecc-plan--comments)
                        (if ecc-plan--changes
                            (format "  ·  vs previous: +%d −%d"
@@ -387,17 +380,12 @@ markers, the diff of the edits, and the general comment."
 
 ;;;; Approving and denying
 
-(defun ecc-plan--updated-permissions (mode)
-  "Return the updatedPermissions vector switching to MODE, or nil."
-  (when (and mode (not (string-empty-p mode)))
-    (vector (ecc-protocol-set-mode-suggestion mode))))
-
 (defun ecc-plan--read-mode ()
   "Ask for the permission mode to switch to."
   (let ((choice (completing-read "Permission mode after approval: "
                                  (append ecc-plan-modes '("(CLI default)"))
                                  nil t nil nil
-                                 (or ecc-plan--mode ecc-plan-default-mode))))
+                                 (or ecc-plan--mode ecc-perm-plan-default-mode))))
     (and (not (equal choice "(CLI default)")) choice)))
 
 (defun ecc-plan-set-mode (mode)
@@ -406,15 +394,6 @@ markers, the diff of the edits, and the general comment."
   (setq ecc-plan--mode mode)
   (force-mode-line-update)
   (message "Permission mode on approval: %s" (or mode "(CLI default)")))
-
-(defun ecc-plan-approve-request (request &optional mode)
-  "Allow REQUEST as it stands, switching to permission MODE.
-MODE defaults to `ecc-plan-default-mode'.  Used when the plan is
-approved without opening the review buffer."
-  (let ((mode (or mode ecc-plan-default-mode)))
-    (ecc-perm-respond request 'allow
-                      :updated-permissions (ecc-plan--updated-permissions mode)
-                      :message (if mode (format "approved → %s" mode) "approved"))))
 
 (defun ecc-plan--finish (buffer)
   "Take BUFFER off the screen once its request was answered."
@@ -428,13 +407,13 @@ approved without opening the review buffer."
 A line comment, an @claude marker or an edit turns the approval into a
 deny carrying the structured feedback; with none of them the request is
 allowed and the CLI is asked to switch to MODE.  MODE defaults to what
-`ecc-plan-set-mode' chose, then to `ecc-plan-default-mode'; a prefix
+`ecc-plan-set-mode' chose, then to `ecc-perm-plan-default-mode'; a prefix
 argument asks for it."
   (interactive (list (and current-prefix-arg (ecc-plan--read-mode))))
   (let* ((request (or ecc-plan--request (user-error "Not a plan buffer")))
          (session (ecc-request-session request))
          (buffer (current-buffer))
-         (mode (or mode ecc-plan--mode ecc-plan-default-mode))
+         (mode (or mode ecc-plan--mode ecc-perm-plan-default-mode))
          (feedback (ecc-plan-buffer-feedback))
          (summary (format "Sent back for revision (%d comments, %d markers%s)"
                           (length (ecc-plan-comments))
@@ -448,7 +427,7 @@ argument asks for it."
         (progn
           (ecc-perm-respond request 'deny :message feedback)
           (message "%s" summary))
-      (ecc-plan-approve-request request mode)
+      (ecc-perm-approve-plan-request request mode)
       (message "Plan approved%s" (if mode (format " (permission mode → %s)" mode) "")))
     (ecc-plan--finish buffer)
     feedback))
