@@ -671,6 +671,77 @@ It makes the file this Emacs's own, and nothing comes through
           (should-not (ecc-model-sessions))
           (should (ecc-restore-test--watching-p)))))))
 
+;;;; The baseline of the review
+
+(defun ecc-restore-test--repo (directory)
+  "Make DIRECTORY a git repository with x.txt committed, and return its tree.
+The tree is a snapshot of the working tree, as a session's baseline is."
+  (dolist (args '(("init" "-q")
+                  ("config" "user.email" "t@example.com")
+                  ("config" "user.name" "t")))
+    (should (eq 0 (car (apply #'ecc-review--git directory args)))))
+  (with-temp-file (expand-file-name "x.txt" directory) (insert "one\n"))
+  (should (eq 0 (car (ecc-review--git directory "add" "x.txt"))))
+  (should (eq 0 (car (ecc-review--git directory "commit" "-q" "-m" "x"))))
+  (ecc-review-snapshot directory))
+
+(ert-deftest ecc-restore-test-the-review-baseline-is-saved ()
+  "A session is saved with the id of the tree its review compares with."
+  (ecc-restore-test--with-world
+    (let ((a (ecc-restore-test--open "id-a" "a" ecc-restore-test--one))
+          (b (ecc-restore-test--open "id-b" "b" ecc-restore-test--two)))
+      (setf (ecc-session-baseline a) "4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+      (ecc-restore-test--flush)
+      (let ((entries (plist-get (ecc-restore--read) :sessions)))
+        (should (equal (plist-get (seq-find (lambda (entry) (equal (plist-get entry :id) "id-a"))
+                                            entries)
+                                  :baseline)
+                       (ecc-session-baseline a)))
+        ;; A session outside git has none, and saves none.
+        (should-not (ecc-session-baseline b))
+        (should-not (plist-member (seq-find (lambda (entry)
+                                              (equal (plist-get entry :id) "id-b"))
+                                            entries)
+                                  :baseline))))))
+
+(ert-deftest ecc-restore-test-a-restored-session-keeps-its-baseline ()
+  "A restored session is reviewed from where it started, not from the restore.
+The two sessions say so each of its own: one whose tree git still has
+gets it back, and keeps it when its CLI starts; one whose tree is gone
+has none, and the message says so."
+  (skip-unless (executable-find "git"))
+  (ecc-restore-test--with-world
+    (let ((tree (ecc-restore-test--repo ecc-restore-test--one)))
+      (ecc-restore-test--repo ecc-restore-test--two)
+      ;; What the session did before Emacs went down.
+      (with-temp-file (expand-file-name "x.txt" ecc-restore-test--one) (insert "two\n"))
+      (ecc-restore-test--write-state
+       nil
+       (list (list :id ecc-restore-test--b :name "bee" :root ecc-restore-test--two
+                   :cwd ecc-restore-test--two :baseline (make-string 40 ?0))
+             (list :id ecc-restore-test--a :name "ay" :root ecc-restore-test--one
+                   :cwd ecc-restore-test--one :baseline tree)))
+      (let ((said nil))
+        (cl-letf (((symbol-function 'message)
+                   (lambda (format &rest args)
+                     (setq said (apply #'format-message format args)))))
+          (should (= 2 (length (ecc-restore)))))
+        (should (string-search "git no longer has the tree the review of bee started from"
+                               said))
+        (should-not (string-search "ay" said)))
+      (let ((a (ecc-model-session ecc-restore-test--a))
+            (b (ecc-model-session ecc-restore-test--b)))
+        (should (equal (ecc-session-baseline a) tree))
+        (should-not (ecc-session-baseline b))
+        ;; The CLI starting keeps it, and the review shows the change made
+        ;; before the restore.
+        (should (equal (ecc-review-ensure-baseline a) tree))
+        (unwind-protect
+            (should (string-search "+two" (with-current-buffer (ecc-review-buffer a)
+                                            (buffer-string))))
+          (when-let* ((review (get-buffer (ecc-review-buffer-name a))))
+            (kill-buffer review)))))))
+
 (provide 'ecc-restore-test)
 
 ;;; ecc-restore-test.el ends here

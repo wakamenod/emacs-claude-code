@@ -863,8 +863,10 @@ hunk that is shown can be passed over, one that is not cannot be
 commented on.
 
 So a session started afresh takes one because it has none, a session
-resumed from a recording in a new Emacs takes its first, and a session
-whose CLI was killed and started again keeps the one it began with.  A
+whose CLI was killed and started again keeps the one it began with,
+and so does a session `ecc-restore' brought back into a new Emacs
+while git still has its tree (`ecc-review-restore-baseline').  One
+resumed from a recording that nothing saved takes its first.  A
 session outside git keeps nil and is reviewed from what it recorded
 instead -- and asks git again next time, since a project can be put
 under git while a session runs."
@@ -874,6 +876,28 @@ under git while a session runs."
                                (or (ecc-session-project-root session)
                                    default-directory))))
               (ecc-review-snapshot root)))))
+
+(defun ecc-review-tree-exists-p (root tree)
+  "Return non-nil when the repository at ROOT still has the tree TREE.
+A baseline is a tree nothing names (`ecc-review-snapshot'), which
+`git gc' deletes once it is older than `gc.pruneExpire', two weeks by
+default."
+  (and root tree
+       (eq 0 (car (ecc-review--git root "cat-file" "-e" (concat tree "^{tree}"))))))
+
+(defun ecc-review-restore-baseline (session tree)
+  "Give SESSION back TREE, the baseline it had in the Emacs it was saved from.
+`ecc-restore' calls this for each session it brings back, so that the
+review of what the session changed still starts where the session
+started rather than when it was restored.  Return TREE when the
+repository of SESSION still has it, and nil, leaving the baseline of
+SESSION as it was, when it has not: then `ecc-review-ensure-baseline'
+takes a new one when the CLI next starts, as for a session nothing
+saved."
+  (when-let* ((root (ecc-review-git-root (or (ecc-session-project-root session)
+                                             default-directory)))
+              ((ecc-review-tree-exists-p root tree)))
+    (setf (ecc-session-baseline session) tree)))
 
 ;;;; A diff made from what the session recorded
 

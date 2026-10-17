@@ -29,6 +29,18 @@ Verified against **Claude Code CLI 2.1.290**.
 
 ### Fixed
 
+- A session `ecc-restore` brings back is reviewed from where it started
+  again. 0.4.0 saved each session without the baseline its review
+  compares with, so `ecc-review` of a restored session fell back to
+  `HEAD`, and once a prompt started its CLI took a new baseline there and
+  then: everything the session had done before Emacs went down dropped
+  out of its own review, commits and uncommitted work alike. The id of
+  the baseline is saved in `ecc-restore-file` now, and the session gets
+  it back when git still has the tree; the restore asks git once per
+  session that saved one. A tree `git gc` has deleted is named in the
+  message of `ecc-restore`, and that session takes a new baseline at its
+  next prompt, as before.
+
 - A Bash call that comes up open on the files it changed shows its
   `description:` and the diff, and no longer its `command:` or its `→`
   output. 0.4.2 cut a command of several lines to
