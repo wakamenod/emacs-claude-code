@@ -50,6 +50,7 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-proc)
 (require 'ecc-dispatch)
 (require 'ecc-registry)
@@ -57,7 +58,6 @@
 
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-review-ensure-baseline "ecc-review" (session))
 
 (defvar ecc-history-page-turns 50
   "Number of turns read when a recorded conversation is opened.")
@@ -675,7 +675,7 @@ the CLI would run twice on the same recording."
   ;; began with -- this restarts the CLI, not the work -- and one read
   ;; back from a recording takes its first here.
   (require 'ecc-review)
-  (ecc-review-ensure-baseline session)
+  (ecc-git-ensure-baseline session)
   (ecc-proc-start session #'ecc-dispatch t fork)
   ;; Noted after the start, which would otherwise be the one to forget it.
   (setf (alist-get 'fork-unsettled (ecc-session-progress session)) (and fork t))

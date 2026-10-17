@@ -29,7 +29,7 @@
 (defun ecc-review-menu-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY and return its output, trimmed.
 The test fails when git does."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (string-trim (cdr result))))
@@ -101,7 +101,7 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
-      (let ((root (ecc-review-git-root directory)))
+      (let ((root (ecc-git-root directory)))
         ;; A feature branch off develop: one commit beyond develop, two
         ;; beyond main.  The fork comes with the guess.
         (should (equal (ecc-review-menu-guess-base root)
@@ -156,7 +156,7 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
     (ecc-review-menu-test--commit directory "m1.txt" "1\n")
     (ecc-review-menu-test--commit directory "m2.txt" "2\n")
     (ecc-review-menu-test--git directory "checkout" "-q" "feature")
-    (let ((root (ecc-review-git-root directory))
+    (let ((root (ecc-git-root directory))
           (ecc-review-menu-base-candidates '("main" "develop")))
       (should (equal (car (ecc-review-menu-guess-base root)) "develop")))))
 
@@ -191,7 +191,7 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
-      (let ((root (ecc-review-git-root directory))
+      (let ((root (ecc-git-root directory))
             (fork (ecc-review-menu-test--id directory two)))
         ;; Every way of saying the current branch is the same answer,
         ;; called after what it compares rather than after the id.
@@ -226,7 +226,7 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--repo directory)
-    (let ((root (ecc-review-git-root directory)))
+    (let ((root (ecc-git-root directory)))
       (dolist (call (list (lambda () (ecc-review-menu-branch-range root "--staged"))
                           (lambda () (ecc-review-menu-branch-range root "main" "--cached"))
                           (lambda () (ecc-review-menu-branch-range root "--output=x"))))
@@ -245,7 +245,7 @@ Each call is pushed as (COMMAND STYLE ARGS...), STYLE being the
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (seq-let (one two three) (ecc-review-menu-test--repo directory)
-      (let* ((root (ecc-review-git-root directory))
+      (let* ((root (ecc-git-root directory))
              (empty (ecc-review--empty-tree root))
              (one-id (ecc-review-menu-test--id directory one))
              (two-id (ecc-review-menu-test--id directory two))
@@ -287,7 +287,7 @@ under the name it was given."
     (seq-let (_one _two three) (ecc-review-menu-test--repo directory)
       (ecc-test-with-fake-session session
         (setf (ecc-session-project-root session) directory)
-        (let* ((root (ecc-review-git-root directory))
+        (let* ((root (ecc-git-root directory))
                (range (ecc-review-menu-commit-range root "HEAD"))
                (buffer (ecc-review-range-buffer session range directory)))
           (unwind-protect
@@ -368,7 +368,7 @@ review the user is reading."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (seq-let (_one two three) (ecc-review-menu-test--repo directory)
-      (let ((root (ecc-review-git-root directory))
+      (let ((root (ecc-git-root directory))
             (answers nil)
             (defaults nil))
         (cl-letf (((symbol-function 'completing-read)
@@ -434,7 +434,7 @@ commit of its own is somebody's work, and stays."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--stale-develop directory)
-    (let ((root (ecc-review-git-root directory)))
+    (let ((root (ecc-git-root directory)))
       (should (equal (ecc-review-menu-guess-base root)
                      (cons "origin/develop"
                            (ecc-review-menu-test--id directory "origin/develop"))))
@@ -455,7 +455,7 @@ working tree alone.  The local develop stays the base."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
-      (let ((root (ecc-review-git-root directory)))
+      (let ((root (ecc-git-root directory)))
         ;; origin/develop: develop, then feature merged in, then more.
         (ecc-review-menu-test--git directory "checkout" "-q" "-b" "merged" "develop")
         (ecc-review-menu-test--git directory "merge" "-q" "--no-ff" "-m" "merge" "feature")
@@ -512,8 +512,8 @@ rest ask nothing."
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--stale-develop directory)
     (let ((asked nil))
-      (cl-letf* ((git (symbol-function 'ecc-review--git))
-                 ((symbol-function 'ecc-review--git)
+      (cl-letf* ((git (symbol-function 'ecc-git-run))
+                 ((symbol-function 'ecc-git-run)
                   (lambda (root &rest args)
                     (push args asked)
                     (apply git root args))))
@@ -547,7 +547,7 @@ rest ask nothing."
     (make-directory (concat directory "new"))
     (ecc-review-menu-test--write directory "new/one.txt" "1\n")
     (ecc-review-menu-test--write directory "new/two.txt" "2\n")
-    (let ((status (ecc-review-menu--status (ecc-review-git-root directory))))
+    (let ((status (ecc-review-menu--status (ecc-git-root directory))))
       ;; A rename is one path, the new one; the old one is not a file.
       (should (equal (plist-get status :staged) '("renamed.txt")))
       (should (equal (plist-get status :unstaged) '("a.txt")))
@@ -562,12 +562,12 @@ rest ask nothing."
     (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
       (ecc-test-with-fake-session session
         (setf (ecc-session-project-root session) directory)
-        (ecc-review-ensure-baseline session)
+        (ecc-git-ensure-baseline session)
         (ecc-review-menu-test--write directory "a.txt" "unstaged\n")
         (ecc-review-menu-test--write directory "z.txt" "staged\n")
         (ecc-review-menu-test--git directory "add" "z.txt")
         (ecc-review-menu-test--write directory "u.txt" "untracked\n")
-        (let* ((root (ecc-review-git-root directory))
+        (let* ((root (ecc-git-root directory))
                (counts (ecc-review-menu-counts session root two)))
           (should (equal (alist-get 'worktree counts) 3))
           (should (equal (alist-get 'unstaged counts) 2))
@@ -589,7 +589,7 @@ rest ask nothing."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (seq-let (_one two _three) (ecc-review-menu-test--repo directory)
-      (let ((root (ecc-review-git-root directory))
+      (let ((root (ecc-git-root directory))
             (fork (ecc-review-menu-test--id directory two)))
         ;; c.txt came with feature's commit; the working tree drops it
         ;; again, so the fork and the working tree agree about it.
@@ -611,7 +611,7 @@ rest ask nothing."
       (setf (ecc-session-project-root session) directory)
       ;; Nothing changed: a real 0, which is "nothing".
       (should (equal (ecc-review-menu--session-count session) 0))
-      (cl-letf (((symbol-function 'ecc-review-snapshot) (lambda (&rest _) nil)))
+      (cl-letf (((symbol-function 'ecc-git-snapshot) (lambda (&rest _) nil)))
         (let ((ecc-review-menu--state (ecc-review-menu-make-state session directory))
               (said nil))
           (should (stringp (alist-get 'session (plist-get ecc-review-menu--state :counts))))
@@ -1170,7 +1170,7 @@ dropped at the suspend would leave every choice off."
   (skip-unless (executable-find "git"))
   (ecc-review-menu-test--with-directory directory
     (ecc-review-menu-test--git directory "init" "-q")
-    (let ((root (ecc-review-git-root directory)))
+    (let ((root (ecc-git-root directory)))
       (should (equal (ecc-review--head-tree root) (ecc-review--empty-tree root)))
       (ecc-review-menu-test--git directory "config" "user.email" "t@example.com")
       (ecc-review-menu-test--git directory "config" "user.name" "t")

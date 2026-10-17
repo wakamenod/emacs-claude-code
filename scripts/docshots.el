@@ -991,7 +991,7 @@ from git.  The demo projects are directories in /tmp with no repository
 in them, so the answers are invented here, the way the resume picker\='s
 recordings are.  Making real repositories and real worktrees instead
 would put this machine\='s paths and branches in the picture."
-  (advice-add 'ecc-worktree-main :override
+  (advice-add 'ecc-git-main-worktree :override
               (lambda (root)
                 (and (seq-find (lambda (pair)
                                  (equal (file-name-as-directory root)
@@ -1000,7 +1000,7 @@ would put this machine\='s paths and branches in the picture."
                                shot-worktree-roots)
                      shot-root))
               '((name . shot-fake-git)))
-  (advice-add 'ecc-worktree-branch :override
+  (advice-add 'ecc-git-branch :override
               (lambda (root)
                 (let ((root (file-name-as-directory root)))
                   (or (car (seq-find
@@ -1012,7 +1012,7 @@ would put this machine\='s paths and branches in the picture."
                       (and (equal root (file-name-as-directory shot-other-root))
                            "master"))))
               '((name . shot-fake-git)))
-  (advice-add 'ecc-worktree-ahead-behind :override
+  (advice-add 'ecc-git-ahead-behind :override
               (lambda (root)
                 (when (equal (file-name-as-directory root)
                              (file-name-as-directory shot-root))
@@ -1021,8 +1021,8 @@ would put this machine\='s paths and branches in the picture."
 
 (defun shot-unfake-git ()
   "Give git its own answers back."
-  (dolist (function '(ecc-worktree-main ecc-worktree-branch
-                                        ecc-worktree-ahead-behind))
+  (dolist (function '(ecc-git-main-worktree ecc-git-branch
+                                            ecc-git-ahead-behind))
     (advice-remove function 'shot-fake-git)))
 
 (defun shot-scene-sidebar ()
@@ -1480,7 +1480,7 @@ so.  The second session is left alone, so the tab line still has one."
   (setq shot-main (ecc-model-create-session :name shot-project
                                             :project-root shot-root))
   (when baseline
-    (ecc-review-ensure-baseline shot-main))
+    (ecc-git-ensure-baseline shot-main))
   (ecc-session-ensure-buffer shot-main)
   (shot-play-to-request shot-main "edit")
   (shot-allow shot-main)
@@ -2086,7 +2086,7 @@ appended to its system prompt.  Every other session goes, as in
                                            . ,shot-live-isolation))))
   ;; What `ecc-start' does in a repository: the review of the session
   ;; is of what it changes from here.
-  (ecc-review-ensure-baseline shot-live)
+  (ecc-git-ensure-baseline shot-live)
   (ecc-session-ensure-buffer shot-live)
   (ecc-proc-start shot-live #'ecc-dispatch)
   (ecc--enable-session-modes)

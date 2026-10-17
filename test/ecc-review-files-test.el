@@ -131,7 +131,7 @@ Return the window of REVIEW."
 
 (defun ecc-review-files-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY, failing the test when it fails."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (cdr result)))
@@ -159,7 +159,7 @@ buffer."
   (ecc-review-files-test--git directory "add" ".")
   (ecc-review-files-test--git directory "commit" "-q" "-m" "init")
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (dolist (name '("a.txt" "b.txt" "c.txt"))
     (ecc-review-files-test--write (concat directory name)
                                   (format "one\n%s\nthree\n" (upcase name))))

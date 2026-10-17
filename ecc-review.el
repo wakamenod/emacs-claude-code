@@ -36,7 +36,7 @@
 ;;
 ;; `ecc-review' and `ecc-review-range' are the same review against
 ;; different bases: the first against what the working tree held when
-;; the session started (`ecc-review-ensure-baseline'), so the commits
+;; the session started (`ecc-git-ensure-baseline'), so the commits
 ;; made during it are still shown; the second against HEAD by default,
 ;; so only what is uncommitted is.  Neither asks how a file was
 ;; changed -- an edit, a shell command and a script all read alike --
@@ -75,6 +75,7 @@
 (require 'diff-mode)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-proc)
 (require 'ecc-diff)
 (require 'ecc-review-map)
@@ -110,9 +111,6 @@ it is one change to allow or refuse, not a tree to read through."
   :type '(choice (const :tag "One diff-mode buffer" diff)
                  (const :tag "ediff, every file in one session" ediff))
   :group 'ecc)
-
-(defvar ecc-review-git-executable "git"
-  "The git program the review runs for `git diff'.")
 
 (defvar ecc-review-header
   "Review comments on the changes below.  Please act on each of them."
@@ -200,19 +198,6 @@ only read are left out."
       changed)))
 
 ;;;; Git
-
-(defun ecc-review--git (directory &rest args)
-  "Run git with ARGS in DIRECTORY and return (EXIT-CODE . OUTPUT).
-Returns nil when git cannot be run at all."
-  (when (executable-find ecc-review-git-executable)
-    (with-temp-buffer
-      (let ((default-directory (file-name-as-directory directory)))
-        (condition-case err
-            (cons (apply #'call-process ecc-review-git-executable nil
-                         (list t nil) nil args)
-                  (buffer-string))
-          (file-error (ecc-log "review" "git failed: %s" (error-message-string err))
-                      nil))))))
 
 (defvar ecc-review--diff-command '("-c" "core.quotePath=false" "diff")
   "How a review runs git's diff: with the names of files as they are.
@@ -354,7 +339,7 @@ but for a/ and b/.  Nil when the line splits neither way."
 (defun ecc-review--git-string (directory &rest args)
   "Return what git ARGS in DIRECTORY print, trimmed.
 Nil when git fails or prints nothing."
-  (pcase (apply #'ecc-review--git directory args)
+  (pcase (apply #'ecc-git-run directory args)
     (`(0 . ,output)
      (let ((text (string-trim output)))
        (and (not (string-empty-p text)) text)))))
@@ -362,16 +347,6 @@ Nil when git fails or prints nothing."
 (defun ecc-review--merge-base (root left right)
   "Return the commit where LEFT and RIGHT part in ROOT, or nil."
   (ecc-review--git-string root "merge-base" left right))
-
-(defun ecc-review-git-root (path)
-  "Return the root of the git repository holding PATH, or nil."
-  (let ((directory (file-name-directory (expand-file-name path))))
-    (when (file-directory-p directory)
-      (pcase (ecc-review--git directory "rev-parse" "--show-toplevel")
-        (`(0 . ,output)
-         (let ((root (string-trim output)))
-           (and (not (string-empty-p root))
-                (file-name-as-directory (expand-file-name root)))))))))
 
 (defun ecc-review--relative (path root)
   "Return PATH relative to the repository ROOT, through symbolic links.
@@ -387,7 +362,7 @@ a path outside the repository."
 (defun ecc-review-git-tracked (root paths)
   "Return the members of PATHS that git tracks in the repository at ROOT.
 PATHS are absolute; the result keeps their order."
-  (pcase (apply #'ecc-review--git root "ls-files" "-z" "--"
+  (pcase (apply #'ecc-git-run root "ls-files" "-z" "--"
                 (mapcar (lambda (path) (ecc-review--relative path root)) paths))
     (`(0 . ,output)
      (let ((tracked (split-string output "\0" t)))
@@ -423,7 +398,7 @@ RANGE is what to diff against, and UNDER what the names are put under
 \(`ecc-review-git-diff').  This is `ecc-review-git-diff\=' without
 the judgement: a caller that has to tell a diff that is empty from one
 git refused to make -- an unknown revision, say -- reads the code."
-  (apply #'ecc-review--git root
+  (apply #'ecc-git-run root
          (append ecc-review--diff-command
                  ecc-review--diff-options
                  (list (format "-U%d" (max 0 ecc-review-context-lines)))
@@ -463,7 +438,7 @@ NEW-FILE writes the header of a file that did not exist before."
   "Return the files under ROOT git does not track, relative to ROOT.
 What .gitignore excludes is left out.  PATHS, relative to ROOT, are
 pathspecs that restrict the answer; nil is every file."
-  (pcase (apply #'ecc-review--git root "ls-files" "-z" "--others" "--exclude-standard"
+  (pcase (apply #'ecc-git-run root "ls-files" "-z" "--others" "--exclude-standard"
                 "--" paths)
     (`(0 . ,output) (split-string output "\0" t))))
 
@@ -492,7 +467,7 @@ printed.  PATHS, relative to ROOT, restrict it to those files."
          (t
           ;; --no-index exits 1 when the two sides differ, which is
           ;; every time here, so only a larger code is a failure.
-          (pcase (apply #'ecc-review--git root
+          (pcase (apply #'ecc-git-run root
                         (append ecc-review--diff-command ecc-review--diff-options
                                 (list (format "-U%d" (max 0 ecc-review-context-lines))
                                       "--no-index" "--" "/dev/null" path)))
@@ -504,7 +479,7 @@ printed.  PATHS, relative to ROOT, restrict it to those files."
 
 (defun ecc-review--unborn-p (root)
   "Return non-nil when the repository at ROOT has no commit yet."
-  (pcase (ecc-review--git root "rev-parse" "--verify" "--quiet" "HEAD")
+  (pcase (ecc-git-run root "rev-parse" "--verify" "--quiet" "HEAD")
     (`(0 . ,_) nil)
     (_ t)))
 
@@ -512,9 +487,9 @@ printed.  PATHS, relative to ROOT, restrict it to those files."
   "Return the hash of the empty tree of the repository at ROOT, or nil.
 Asked of git rather than written out: the 4b825dc everybody knows is the
 SHA-1 one, and a repository whose object format is SHA-256 has another.
-`ecc-review--git\=' gives git no stdin, so --stdin reads nothing and git
+`ecc-git-run\=' gives git no stdin, so --stdin reads nothing and git
 names the tree of nothing."
-  (pcase (ecc-review--git root "hash-object" "-t" "tree" "--stdin")
+  (pcase (ecc-git-run root "hash-object" "-t" "tree" "--stdin")
     (`(0 . ,output)
      (let ((hash (string-trim output)))
        (and (not (string-empty-p hash)) hash)))))
@@ -662,7 +637,7 @@ So one line not starting with ^, and nothing more, is the working tree."
   (cond
    ((eq range 'staged) nil)
    ((or (null range) (string-empty-p range)) t)
-   (t (pcase (ecc-review--git root "rev-parse" "--revs-only" range)
+   (t (pcase (ecc-git-run root "rev-parse" "--revs-only" range)
         (`(0 . ,output)
          (let ((lines (split-string output "\n" t)))
            (and (= (length lines) 1)
@@ -716,70 +691,6 @@ its prompt say so (`ecc-review-elsewhere-note')."
 
 ;;;; What the working tree held at one moment
 
-(defun ecc-review--git-with-index (root index &rest args)
-  "Run git with ARGS in ROOT against the index file INDEX.
-Returns (EXIT-CODE . OUTPUT) like `ecc-review--git\=', or nil."
-  (let ((process-environment
-         (cons (concat "GIT_INDEX_FILE=" index) process-environment)))
-    (apply #'ecc-review--git root args)))
-
-(defun ecc-review-snapshot (root &optional no-add)
-  "Return a git tree naming every file of the working tree at ROOT, or nil.
-What .gitignore excludes is left out, as everywhere else in the review.
-
-With NO-ADD the working tree is not read at all and the tree is the
-index as it stands: what is staged, and nothing else.  That is the
-right-hand side of nothing, but it is the left-hand side of a review
-of what is not staged yet -- the same comparison `git diff\=' with no
-revision makes.
-
-Nothing of the repository is disturbed: the files are added to a
-throwaway index and written out as a tree, so the real index, the
-working tree and `refs/stash\=' are all untouched and no stash entry is
-made.  Unreachable until something names it, the tree is an ordinary
-object and `git gc\=' leaves it alone for `gc.pruneExpire\=' -- two weeks
-by default -- which outlives any session.
-
-The repository\='s own index is copied in first, for its stat cache: git
-then hashes only the files that changed rather than all of them (25 ms
-against 43 ms over 206 files, measured 2026-09-15).  A repository with
-no commit needs no special case here; `git add\=' and `git write-tree\='
-want no HEAD."
-  (let ((index (make-temp-file "ecc-review-index"))
-        (real (pcase (ecc-review--git root "rev-parse" "--git-path" "index")
-                (`(0 . ,output)
-                 (expand-file-name (string-trim output) root)))))
-    (unwind-protect
-        (progn
-          (if (and real (file-readable-p real))
-              ;; With the time of the index, not the time of the copy.
-              ;; git re-reads a file whose cached stat is no older than the
-              ;; index that holds it -- racily clean, the case its stat
-              ;; cannot settle -- and trusts the stat otherwise.  A copy
-              ;; stamped now is newer than every stat in it, so nothing is
-              ;; racily clean any more and a file written in the same
-              ;; second as the last commit, to the same length, reads as
-              ;; unchanged and drops out of the review.  Measured on
-              ;; 2026-09-15 (macOS, git 2.x, one second of stat
-              ;; granularity): 7 misses in 900 runs of write-then-snapshot
-              ;; without the time, none in 900 with it.
-              (copy-file real index t t)
-            ;; git writes the index itself; an empty file is not one.
-            (delete-file index))
-          (pcase (if no-add
-                     '(0 . "")
-                   (ecc-review--git-with-index root index "add" "-A" "--"))
-            (`(0 . ,_)
-             (pcase (ecc-review--git-with-index root index "write-tree")
-               (`(0 . ,output)
-                (let ((tree (string-trim output)))
-                  (and (not (string-empty-p tree)) tree)))
-               (result (ecc-log "review" "write-tree failed in %s: %S" root result)
-                       nil)))
-            (result (ecc-log "review" "snapshot failed in %s: %S" root result)
-                    nil)))
-      (when (file-exists-p index) (delete-file index)))))
-
 (defun ecc-review--head-tree (root)
   "Return the tree of HEAD at ROOT, or the empty tree when there is none.
 The base a review falls back to when it has no baseline of its own."
@@ -793,7 +704,7 @@ ROOT is the repository the two trees belong to, and PATHS restricts the
 comparison.  Renames are not looked for, so that
 each entry names one path and the sizes below can be decided file by
 file; a rename reads as a delete and an add, which a review can see."
-  (pcase (apply #'ecc-review--git root
+  (pcase (apply #'ecc-git-run root
                 (append (list "diff" "--numstat" "-z" "--no-renames" base now "--")
                         paths))
     (`(0 . ,output)
@@ -823,7 +734,7 @@ are trees: the test `ecc-review--binary-p\=' has to make for a file
 diffed against /dev/null does not arise.  A file that no longer exists
 is printed however long it was; its lines are leaving, and a review
 that hid them would hide the whole of what happened to it."
-  (when-let* ((now (ecc-review-snapshot root)))
+  (when-let* ((now (ecc-git-snapshot root)))
     (let ((shown nil)
           (notes nil))
       (pcase-dolist (`(,path . ,binary) (ecc-review--numstat root base now paths))
@@ -836,7 +747,7 @@ that hid them would hide the whole of what happened to it."
                     notes)
             (push path shown))))
       (let* ((diff (and shown
-                        (pcase (apply #'ecc-review--git root
+                        (pcase (apply #'ecc-git-run root
                                       (append
                                        ecc-review--diff-command
                                        ecc-review--diff-options
@@ -851,29 +762,6 @@ that hid them would hide the whole of what happened to it."
                                   nil))))
              (text (concat (or diff "") (string-join (nreverse notes) ""))))
         (and (not (string-empty-p text)) text)))))
-
-(defun ecc-review-ensure-baseline (session)
-  "Record what the working tree of SESSION holds now unless it is known.
-This is what `ecc-review\=' diffs against.  A session that already has
-one keeps it: resuming restarts the CLI, not the work -- the
-conversation, its id and its transcript all carry on -- and taking a
-baseline again there would drop everything the session had already done
-out of its own review.  A review is better too wide than too narrow: a
-hunk that is shown can be passed over, one that is not cannot be
-commented on.
-
-So a session started afresh takes one because it has none, a session
-resumed from a recording in a new Emacs takes its first, and a session
-whose CLI was killed and started again keeps the one it began with.  A
-session outside git keeps nil and is reviewed from what it recorded
-instead -- and asks git again next time, since a project can be put
-under git while a session runs."
-  (or (ecc-session-baseline session)
-      (setf (ecc-session-baseline session)
-            (when-let* ((root (ecc-review-git-root
-                               (or (ecc-session-project-root session)
-                                   default-directory))))
-              (ecc-review-snapshot root)))))
 
 ;;;; A diff made from what the session recorded
 
@@ -937,7 +825,7 @@ is one."
       (let* ((path (expand-file-name (ecc-file-entry-path entry)))
              (root (or (gethash (file-name-directory path) roots)
                        (puthash (file-name-directory path)
-                                (or (ecc-review-git-root path) 'none)
+                                (or (ecc-git-root path) 'none)
                                 roots))))
         (if (eq root 'none)
             (push (cons entry nil) parts)
@@ -2645,8 +2533,8 @@ the answer is nil.  The diff review reads the blobs of its old sides
 with this (`ecc-review--blobs'), the ediff review those of both sides."
   (cond
    ((null ids) nil)
-   ((not (executable-find ecc-review-git-executable))
-    (ecc-log "review" "cat-file %s: no %s to run in %s" option ecc-review-git-executable root)
+   ((not (executable-find ecc-git-executable))
+    (ecc-log "review" "cat-file %s: no %s to run in %s" option ecc-git-executable root)
     nil)
    (t
     (with-temp-buffer
@@ -2657,7 +2545,7 @@ with this (`ecc-review--blobs'), the ediff review those of both sides."
              (coding-system-for-write 'binary)
              (code (condition-case error
                        (call-process-region (point-min) (point-max)
-                                            ecc-review-git-executable
+                                            ecc-git-executable
                                             t '(t nil) nil "cat-file" option)
                      (file-error (error-message-string error)))))
         (if (not (eq code 0))
@@ -3719,11 +3607,11 @@ proposal is closed instead, the proposal being answered by the deny."
   "Return the files changed since SESSION started, relative to its repository.
 Nil when the session is not in a git repository, where what changed is
 known only from what the session recorded."
-  (when-let* ((root (ecc-review-git-root (or (ecc-session-project-root session)
-                                             default-directory)))
+  (when-let* ((root (ecc-git-root (or (ecc-session-project-root session)
+                                      default-directory)))
               (base (or (ecc-session-baseline session)
                         (ecc-review--head-tree root)))
-              (now (ecc-review-snapshot root)))
+              (now (ecc-git-snapshot root)))
     (mapcar #'car (ecc-review--numstat root base now nil))))
 
 (defun ecc-review--relative-paths (paths root base)
@@ -3751,7 +3639,7 @@ not; :name, the name of the review buffer; and :nothing, what to say
 when there is no change to show."
   (let* ((range (and range (ecc-review-parse-range range)))
          (directory (or root (ecc-session-project-root session) default-directory))
-         (root (or (ecc-review-git-root directory)
+         (root (or (ecc-git-root directory)
                    (and range
                         (user-error "%s is not in a git repository"
                                     (abbreviate-file-name directory)))))
@@ -3824,8 +3712,8 @@ Outside git the session\='s own record is all there is."
   "Ask for some of the files SESSION changed and return them absolute.
 Offered relative to the repository and handed on absolute, which is
 what the review reads either way.  None chosen is nil, every file."
-  (let ((root (ecc-review-git-root (or (ecc-session-project-root session)
-                                       default-directory))))
+  (let ((root (ecc-git-root (or (ecc-session-project-root session)
+                                default-directory))))
     (mapcar (lambda (path) (expand-file-name path root))
             (completing-read-multiple
              "Files (empty for all): "
@@ -3852,8 +3740,8 @@ default, or any other range."
              ;; Outside git there are no two trees to lay side by side:
              ;; the review is built from what the session recorded, and
              ;; what that gives is a diff.
-             (ecc-review-git-root (or (ecc-session-project-root session)
-                                      default-directory)))
+             (ecc-git-root (or (ecc-session-project-root session)
+                               default-directory)))
         (progn (require 'ecc-review-ediff)
                (ecc-review-ediff-buffer session paths))
       (ecc-review--display (ecc-review-buffer session paths) session))))
@@ -4152,12 +4040,12 @@ CLI\='s own /diff shows.  \"\" is only what is not staged yet.")
 They are relative to the repository, the changed ones first and then
 those git does not track, when RANGE reads the working tree.  What
 \\[universal-argument] \\[ecc-review-range] offers to choose from."
-  (when-let* ((root (ecc-review-git-root directory)))
+  (when-let* ((root (ecc-git-root directory)))
     (let* ((range (ecc-review-parse-range (or range ecc-review-default-range)))
            (effective (ecc-review--effective-range root range)))
       (delete-dups
        (append
-        (pcase (apply #'ecc-review--git root "diff" "--name-only" "-z"
+        (pcase (apply #'ecc-git-run root "diff" "--name-only" "-z"
                       (append (ecc-review--range-arguments effective)
                               (list "--")))
           (`(0 . ,output) (split-string output "\0" t)))
@@ -4243,7 +4131,7 @@ staged, --staged for what is (`ecc-review-parse-range\=')."
 (defun ecc-review-range-read-paths (directory range)
   "Ask for some of the files a review of DIRECTORY against RANGE shows.
 They come back absolute; none chosen is nil, every file."
-  (let ((root (ecc-review-git-root directory)))
+  (let ((root (ecc-git-root directory)))
     (mapcar (lambda (path) (expand-file-name path root))
             (completing-read-multiple
              "Files (empty for all): "

@@ -38,7 +38,7 @@
 
 (defun ecc-review-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY, failing the test when it fails."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (cdr result)))
@@ -199,14 +199,14 @@ Neither is in a git repository, so both are diffed from the records."
                                 :snapshot "one\n2\nthree\n" :edits 1)
         (ecc-review-test--entry session untracked :original nil
                                 :snapshot "hello\n" :writes 1)
-        (should (equal (ecc-review-git-root tracked)
+        (should (equal (ecc-git-root tracked)
                        (file-name-as-directory (file-truename directory))))
-        (should (equal (ecc-review-git-tracked (ecc-review-git-root tracked)
+        (should (equal (ecc-review-git-tracked (ecc-git-root tracked)
                                                (list tracked untracked))
                        (list tracked)))
         (let ((diff (ecc-review-diff-text (ecc-review-files session))))
           (should diff)
-          (should (equal (cdr diff) (ecc-review-git-root tracked)))
+          (should (equal (cdr diff) (ecc-git-root tracked)))
           (should (string-search "diff --git a/x.txt b/x.txt\n" (car diff)))
           (should (string-search "\n-two\n+2\n" (car diff)))
           (should (string-search (format "--- /dev/null\n+++ %s\n@@ -0,0 +1,1 @@\n+hello\n"
@@ -230,9 +230,9 @@ Neither is in a git repository, so both are diffed from the records."
     (ecc-review-test--git directory "commit" "-q" "-m" "init")
     (ecc-review-test--write (concat directory "x.txt") "two\n")
     (ecc-review-test--write (concat directory "new.txt") "hello\n")
-    (let ((root (ecc-review-git-root (concat directory "x.txt")))
+    (let ((root (ecc-git-root (concat directory "x.txt")))
           (before (ecc-review-test--git directory "status" "--porcelain")))
-      (let ((tree (ecc-review-snapshot root)))
+      (let ((tree (ecc-git-snapshot root)))
         (should (stringp tree))
         ;; The untracked file is in the tree, which is the point: it is
         ;; how a file that was already there stops reading as new.
@@ -262,7 +262,7 @@ carry the time of the index it was made from."
     ;; leaves it saying nothing: a `set-file-times' can put back the
     ;; modification time of a file, and nothing can put back its change time.
     (ecc-review-test--git directory "config" "core.trustctime" "false")
-    (let* ((root (ecc-review-git-root directory))
+    (let* ((root (ecc-git-root directory))
            (file (expand-file-name "x.txt" root))
            (index (expand-file-name ".git/index" root))
            ;; A moment ago, so that a copy of the index stamped now would be
@@ -278,7 +278,7 @@ carry the time of the index it was made from."
       (set-file-times index moment)
       (should (assoc "x.txt"
                      (ecc-review--numstat root (ecc-review--head-tree root)
-                                          (ecc-review-snapshot root) nil))))))
+                                          (ecc-git-snapshot root) nil))))))
 
 (ert-deftest ecc-review-test-snapshot-no-add-is-the-index ()
   "With NO-ADD the snapshot is the index: what is staged and nothing else."
@@ -295,15 +295,15 @@ carry the time of the index it was made from."
     (ecc-review-test--git directory "add" "x.txt")
     (ecc-review-test--write (concat directory "x.txt") "working\n")
     (ecc-review-test--write (concat directory "new.txt") "hello\n")
-    (let* ((root (ecc-review-git-root directory))
-           (index (ecc-review-snapshot root t))
-           (whole (ecc-review-snapshot root)))
+    (let* ((root (ecc-git-root directory))
+           (index (ecc-git-snapshot root t))
+           (whole (ecc-git-snapshot root)))
       (should index)
       (should-not (equal index whole))
       (should (equal (ecc-review-test--git directory "show" (concat index ":x.txt"))
                      "staged\n"))
       ;; The untracked file is only in the snapshot of the working tree.
-      (should-not (equal 0 (car (ecc-review--git directory "show"
+      (should-not (equal 0 (car (ecc-git-run directory "show"
                                                  (concat index ":new.txt")))))
       (should (equal (ecc-review-test--git directory "show" (concat whole ":x.txt"))
                      "working\n"))
@@ -330,7 +330,7 @@ carry the time of the index it was made from."
             (ecc-review-test--write (concat directory "x.txt") "mine\n")
             (ecc-review-test--write (concat directory "was-here.txt") "already\n")
             (setf (ecc-session-project-root session) directory)
-            (should (ecc-review-ensure-baseline session))
+            (should (ecc-git-ensure-baseline session))
             ;; Now the session works, by no particular tool.
             (ecc-review-test--write (concat directory "x.txt") "theirs\n")
             (ecc-review-test--write (concat directory "made.txt") "new\n")
@@ -359,12 +359,12 @@ carry the time of the index it was made from."
             (ecc-review-test--git directory "add" "x.txt")
             (ecc-review-test--git directory "commit" "-q" "-m" "init")
             (setf (ecc-session-project-root session) directory)
-            (let ((first (ecc-review-ensure-baseline session)))
+            (let ((first (ecc-git-ensure-baseline session)))
               (should first)
               ;; The session works, then its CLI is killed and started
               ;; again.  Resuming restarts the process, not the work.
               (ecc-review-test--write (concat directory "x.txt") "two\n")
-              (should (equal (ecc-review-ensure-baseline session) first))
+              (should (equal (ecc-git-ensure-baseline session) first))
               ;; So the work done before the resume is still reviewable.
               (let ((buffer (ecc-review-buffer session)))
                 (with-current-buffer buffer
@@ -385,7 +385,7 @@ carry the time of the index it was made from."
             (ecc-review-test--git directory "add" "x.txt")
             (ecc-review-test--git directory "commit" "-q" "-m" "init")
             (setf (ecc-session-project-root session) directory)
-            (should (ecc-review-ensure-baseline session))
+            (should (ecc-git-ensure-baseline session))
             ;; The session changes a file and commits it, as the project
             ;; asks for: meaningful steps rather than one lump.
             (ecc-review-test--write (concat directory "x.txt") "two\n")
@@ -413,7 +413,7 @@ carry the time of the index it was made from."
           (let ((ecc-review-max-bytes 100))
             (ecc-review-test--git directory "init" "-q")
             (setf (ecc-session-project-root session) directory)
-            (should (ecc-review-ensure-baseline session))
+            (should (ecc-git-ensure-baseline session))
             (ecc-review-test--write (concat directory "lock.json")
                                     (make-string 400 ?x))
             (ecc-review-test--write (concat directory "small.txt") "fine\n")
@@ -436,7 +436,7 @@ carry the time of the index it was made from."
                                     :snapshot "after\n" :edits 1)
             (setf (ecc-session-project-root session) directory)
             ;; No repository, so no baseline and nothing to diff trees with.
-            (should-not (ecc-review-ensure-baseline session))
+            (should-not (ecc-git-ensure-baseline session))
             (let ((buffer (ecc-review-buffer session)))
               (with-current-buffer buffer
                 (should (string-search "\n-before\n+after\n" (buffer-string))))))
@@ -474,7 +474,7 @@ carry the time of the index it was made from."
                 (should (derived-mode-p 'ecc-review-mode))
                 (should (equal (buffer-name) "*ecc-review: test (HEAD)*"))
                 (should (equal ecc-review--range "HEAD"))
-                (should (equal default-directory (ecc-review-git-root directory)))
+                (should (equal default-directory (ecc-git-root directory)))
                 (let ((text (buffer-string)))
                   ;; Unstaged, staged and untracked, none of them the
                   ;; session\='s own work.
@@ -513,7 +513,7 @@ carry the time of the index it was made from."
             (ecc-review-test--write big (make-string 200 ?x))
             (setf (ecc-session-project-root session) directory)
             (let* ((ecc-review-untracked-max-bytes 100)
-                   (text (ecc-review-git-untracked (ecc-review-git-root directory))))
+                   (text (ecc-review-git-untracked (ecc-git-root directory))))
               (should (string-search "Binary files /dev/null and b/photo.png differ" text))
               (should (string-search "Files /dev/null and b/dump.sql differ" text))
               (should (string-search "not shown" text))
@@ -610,7 +610,7 @@ carry the time of the index it was made from."
             (ecc-review-test--git directory "init" "-q")
             (ecc-review-test--write (concat directory "x.txt") "one\ntwo\n")
             (setf (ecc-session-project-root session) directory)
-            (should (ecc-review--unborn-p (ecc-review-git-root directory)))
+            (should (ecc-review--unborn-p (ecc-git-root directory)))
             (let ((buffer (ecc-review-range-buffer session)))
               (with-current-buffer buffer
                 (should (derived-mode-p 'ecc-review-mode))
@@ -671,7 +671,7 @@ carry the time of the index it was made from."
   (ecc-test-with-fake-session session
     (ecc-review-test--with-directory directory
       (setf (ecc-session-project-root session) directory)
-      (cl-letf (((symbol-function 'ecc-review-git-root) (lambda (_path) nil)))
+      (cl-letf (((symbol-function 'ecc-git-root) (lambda (_path) nil)))
         (should-error (ecc-review-range-buffer session) :type 'user-error)))))
 
 ;;;; The review buffer
@@ -1340,7 +1340,7 @@ s.py when the session starts."
   (ecc-review-test--git directory "add" "s.py")
   (ecc-review-test--git directory "commit" "-q" "-m" "init")
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (ecc-review-test--write (concat directory "s.py") first)
   (ecc-review-buffer session))
 
@@ -3462,7 +3462,7 @@ Returns the path of x.txt."
   (skip-unless (executable-find "git"))
   (ecc-review-test--with-directory directory
     (ecc-review-test--repo directory)
-    (let ((root (ecc-review-git-root directory)))
+    (let ((root (ecc-git-root directory)))
       (dolist (range '(nil "" "HEAD" "HEAD~1"))
         (should (ecc-review--range-includes-worktree-p root range)))
       (dolist (range '(staged "HEAD~1..HEAD" "HEAD~1...HEAD" "HEAD^!" "no-such-branch"))
@@ -3567,7 +3567,7 @@ Returns the path of x.txt."
             (should (equal (ecc-review-range--read-arguments)
                            (list session 'staged directory
                                  (list (expand-file-name
-                                        "x.txt" (ecc-review-git-root directory)))))))
+                                        "x.txt" (ecc-git-root directory)))))))
           ;; What is staged, and no untracked file.
           (should (equal offered '("x.txt")))
           (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "--output=x")))
@@ -4124,7 +4124,7 @@ and a tool's relative file_path likewise."
             (ecc-review-test--repo directory)
             (make-symbolic-link "x.txt" (concat directory "link.txt"))
             (should (equal (ecc-review--relative (concat directory "link.txt")
-                                                 (ecc-review-git-root directory))
+                                                 (ecc-git-root directory))
                            "link.txt"))
             (setf (ecc-session-project-root session) directory)
             (with-current-buffer (ecc-review-range-buffer session "HEAD" nil '("link.txt"))

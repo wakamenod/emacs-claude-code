@@ -877,7 +877,7 @@ Nothing is started and nothing is stopped: `ecc-proc-release' and
                   (lambda (session &rest _) (setq released session)))
                  ((symbol-function 'ecc-proc-start)
                   (lambda (session _handler &rest args) (setq resumed (cons session args))))
-                 ((symbol-function 'ecc-review-ensure-baseline) #'ignore)
+                 ((symbol-function 'ecc-git-ensure-baseline) #'ignore)
                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
          ,@body))))
 

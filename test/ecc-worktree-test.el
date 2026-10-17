@@ -28,14 +28,14 @@ The cache is fresh as well: a test must not see what an earlier one
 asked git."
   (declare (indent 1))
   `(let ((,var (file-name-as-directory (make-temp-file "ecc-worktree" t)))
-         (ecc-worktree--cache (make-hash-table :test #'equal))
+         (ecc-git--cache (make-hash-table :test #'equal))
          (ecc-worktree--offers-pending nil))
      (unwind-protect (progn ,@body)
        (delete-directory ,var t))))
 
 (defun ecc-worktree-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY, failing the test when it fails."
-  (let ((result (apply #'ecc-worktree--git directory
+  (let ((result (apply #'ecc-git-run-with-stderr directory
                        (append '("-c" "user.name=t" "-c" "user.email=t@example.com"
                                  "-c" "init.defaultBranch=main"
                                  "-c" "protocol.file.allow=always")
@@ -76,28 +76,28 @@ prunable gitdir file points to non-existent location
 
 (ert-deftest ecc-worktree-test-parse ()
   "Every record of the porcelain becomes an entry, the main one first."
-  (let ((entries (ecc-worktree-parse ecc-worktree-test--porcelain)))
+  (let ((entries (ecc-git-parse-worktrees ecc-worktree-test--porcelain)))
     (should (= 4 (length entries)))
-    (should (equal (mapcar #'ecc-worktree-entry-path entries)
+    (should (equal (mapcar #'ecc-git-worktree-entry-path entries)
                    '("/repo/" "/repo/.claude/worktrees/feat+plugins/"
                      "/repo/.claude/worktrees/loose/"
                      "/repo/.claude/worktrees/gone/")))
-    (should (equal (mapcar #'ecc-worktree-entry-branch entries)
+    (should (equal (mapcar #'ecc-git-worktree-entry-branch entries)
                    '("release/0.2.0" "fix/plugin-review" nil "old")))
     (should (equal (mapcar (lambda (entry)
-                             (and (ecc-worktree-entry-main-p entry) t))
+                             (and (ecc-git-worktree-entry-main-p entry) t))
                            entries)
                    '(t nil nil nil)))
-    (should (ecc-worktree-entry-detached-p (nth 2 entries)))
-    (should-not (ecc-worktree-entry-detached-p (nth 1 entries)))
-    (should (equal (ecc-worktree-entry-prunable-p (nth 3 entries))
+    (should (ecc-git-worktree-entry-detached-p (nth 2 entries)))
+    (should-not (ecc-git-worktree-entry-detached-p (nth 1 entries)))
+    (should (equal (ecc-git-worktree-entry-prunable-p (nth 3 entries))
                    "gitdir file points to non-existent location"))
-    (should-not (ecc-worktree-entry-prunable-p (car entries)))))
+    (should-not (ecc-git-worktree-entry-prunable-p (car entries)))))
 
 (ert-deftest ecc-worktree-test-parse-empty ()
   "Nothing to parse is no worktrees rather than an error."
-  (should-not (ecc-worktree-parse ""))
-  (should-not (ecc-worktree-parse nil)))
+  (should-not (ecc-git-parse-worktrees ""))
+  (should-not (ecc-git-parse-worktrees nil)))
 
 ;;;; The slug and the path
 
@@ -134,23 +134,23 @@ prunable gitdir file points to non-existent location
            (path (ecc-worktree-create directory "feat/x")))
       (should (file-directory-p path))
       (should (equal path (ecc-worktree-path directory "feat/x")))
-      (let ((entries (ecc-worktree-list directory)))
+      (let ((entries (ecc-git-worktrees directory)))
         (should (= 2 (length entries)))
-        (should (ecc-worktree-entry-main-p (car entries)))
-        (should (equal (ecc-worktree-entry-branch (nth 1 entries)) "feat/x")))
+        (should (ecc-git-worktree-entry-main-p (car entries)))
+        (should (equal (ecc-git-worktree-entry-branch (nth 1 entries)) "feat/x")))
       ;; The point of the whole file: a linked worktree knows its parent
       ;; and the main worktree has none.
-      (should (equal (file-truename (ecc-worktree-main path))
+      (should (equal (file-truename (ecc-git-main-worktree path))
                      (file-truename directory)))
-      (should-not (ecc-worktree-main directory))
-      (should (equal (ecc-worktree-branch path) "feat/x"))
-      (should (equal (ecc-worktree-branch directory) "main"))
-      (should (member "feat/x" (ecc-worktree-branches directory)))
+      (should-not (ecc-git-main-worktree directory))
+      (should (equal (ecc-git-branch path) "feat/x"))
+      (should (equal (ecc-git-branch directory) "main"))
+      (should (member "feat/x" (ecc-git-branches directory)))
       (ecc-worktree-remove path)
       (should-not (file-directory-p path))
-      (should (= 1 (length (ecc-worktree-list directory))))
+      (should (= 1 (length (ecc-git-worktrees directory))))
       ;; The branch outlives the worktree.
-      (should (member "feat/x" (ecc-worktree-branches directory))))))
+      (should (member "feat/x" (ecc-git-branches directory))))))
 
 (ert-deftest ecc-worktree-test-create-refuses-twice ()
   "A directory that is there already is not written over."
@@ -168,10 +168,10 @@ prunable gitdir file points to non-existent location
   "A directory that is not in a repository answers nil to everything."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-directory directory
-    (should-not (ecc-worktree-list directory))
-    (should-not (ecc-worktree-main directory))
-    (should-not (ecc-worktree-branch directory))
-    (should-not (ecc-worktree-ahead-behind directory))))
+    (should-not (ecc-git-worktrees directory))
+    (should-not (ecc-git-main-worktree directory))
+    (should-not (ecc-git-branch directory))
+    (should-not (ecc-git-ahead-behind directory))))
 
 (ert-deftest ecc-worktree-test-ahead-behind ()
   "The counts are ahead first, and a branch with no upstream has none.
@@ -188,26 +188,26 @@ This is what pins down which side of `rev-list --left-right' is which."
       (ecc-worktree-test--git upstream "commit" "-q" "--allow-empty" "-m" "u2")
       (ecc-worktree-test--git clone "fetch" "-q")
       (ecc-worktree-test--git clone "commit" "-q" "--allow-empty" "-m" "d1")
-      (should (equal (ecc-worktree-ahead-behind clone) '(1 . 2)))
+      (should (equal (ecc-git-ahead-behind clone) '(1 . 2)))
       ;; A branch nobody has pushed has no upstream to count against.
       (ecc-worktree-test--git clone "checkout" "-q" "-b" "local-only")
-      (clrhash ecc-worktree--cache)
-      (should-not (ecc-worktree-ahead-behind clone)))))
+      (clrhash ecc-git--cache)
+      (should-not (ecc-git-ahead-behind clone)))))
 
 (ert-deftest ecc-worktree-test-cache ()
   "An answer is reused until it is forgotten."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-directory directory
     (ecc-worktree-test--repository directory)
-    (should (equal (ecc-worktree-branch directory) "main"))
+    (should (equal (ecc-git-branch directory) "main"))
     (ecc-worktree-test--git directory "checkout" "-q" "-b" "other")
-    (should (equal (ecc-worktree-branch directory) "main"))
-    (ecc-worktree-forget)
-    (should (equal (ecc-worktree-branch directory) "other"))
+    (should (equal (ecc-git-branch directory) "main"))
+    (ecc-git-forget)
+    (should (equal (ecc-git-branch directory) "other"))
     ;; And the clock lets go of it on its own.
-    (let ((ecc-worktree--cache-ttl -1))
+    (let ((ecc-git--cache-ttl -1))
       (ecc-worktree-test--git directory "checkout" "-q" "-b" "third")
-      (should (equal (ecc-worktree-branch directory) "third")))))
+      (should (equal (ecc-git-branch directory) "third")))))
 
 ;;;; The commands
 
@@ -242,7 +242,7 @@ has it need not be named the way this package would have named it."
       (let ((elsewhere (expand-file-name "elsewhere" directory)))
         (ecc-worktree-test--git directory "worktree" "add" "-b" "feat/x"
                                 elsewhere)
-        (clrhash ecc-worktree--cache)
+        (clrhash ecc-git--cache)
         (let ((ecc-worktree-directory ".claude/worktrees")
               (started nil))
           (cl-letf (((symbol-function #'ecc-start)
@@ -259,7 +259,7 @@ has it need not be named the way this package would have named it."
             (cl-letf (((symbol-function #'yes-or-no-p) (lambda (&rest _) nil)))
               (should-error (ecc-start-worktree "feat/x") :type 'user-error))
             ;; The branch of the repository itself is not a worktree to go to.
-            (should-error (ecc-start-worktree (ecc-worktree-branch directory))
+            (should-error (ecc-start-worktree (ecc-git-branch directory))
                           :type 'user-error)))))))
 
 (ert-deftest ecc-worktree-test-delegate ()
@@ -291,7 +291,7 @@ has it need not be named the way this package would have named it."
           (should-not (file-exists-p (ecc-worktree-path directory "feat/y")))
           ;; And a branch another worktree holds is refused rather than
           ;; gone to: two sessions in one tree is not handing work over.
-          (clrhash ecc-worktree--cache)
+          (clrhash ecc-git--cache)
           (should-error (ecc-worktree-delegate directory "feat/x" "again")
                         :type 'user-error))))))
 
@@ -316,7 +316,7 @@ has it need not be named the way this package would have named it."
           ;; the path it is given and the temporary directory is one.
           (should (equal (file-truename started)
                          (file-truename (ecc-worktree-path directory "feat/x"))))
-          (should (equal (ecc-worktree-branch started) "feat/x")))))))
+          (should (equal (ecc-git-branch started) "feat/x")))))))
 
 (ert-deftest ecc-worktree-test-mcp-tool ()
   "The tool is published, and it works in the project of the session calling."
@@ -471,16 +471,16 @@ slug of that branch: one screen calling the same thing `feat/one\=' and
     (ecc-worktree-test--repository directory)
     (let ((ecc-worktree-directory ".claude/worktrees"))
       (let ((path (ecc-worktree-create directory "feat/one")))
-        (clrhash ecc-worktree--cache)
-        (should (equal (ecc-worktree-session-name path) "feat/one"))
+        (clrhash ecc-git--cache)
+        (should (equal (ecc-git-session-name path) "feat/one"))
         ;; The main worktree keeps the name of its directory, and so
         ;; does a directory that is in no repository at all.
-        (should-not (ecc-worktree-session-name directory))
-        (should-not (ecc-worktree-session-name temporary-file-directory))
+        (should-not (ecc-git-session-name directory))
+        (should-not (ecc-git-session-name temporary-file-directory))
         ;; herdr\='s prefix is dropped, as the Space drops it.
         (let ((generated (ecc-worktree-create directory "worktree/two")))
-          (clrhash ecc-worktree--cache)
-          (should (equal (ecc-worktree-session-name generated) "two")))))))
+          (clrhash ecc-git--cache)
+          (should (equal (ecc-git-session-name generated) "two")))))))
 
 (ert-deftest ecc-worktree-test-prompt-hint ()
   "A draft that speaks of a worktree is sent with a line about the tool."
@@ -593,12 +593,12 @@ session leaves the model; a batch test has no idle moment to wait for."
       (should (file-directory-p path))
       ;; And yes undoes it, in one question: the branch is never asked
       ;; about, and it outlives the directory it was checked out in.
-      (clrhash ecc-worktree--cache)
+      (clrhash ecc-git--cache)
       (ecc-worktree-test--with-answer t
         (should (ecc-worktree-offer-removal path))
         (should (= 1 (length asked))))
       (should-not (file-directory-p path))
-      (should (member "feat/x" (ecc-worktree-branches directory))))))
+      (should (member "feat/x" (ecc-git-branches directory))))))
 
 (ert-deftest ecc-worktree-test-every-removal-says-so ()
   "Every way a worktree goes runs `ecc-worktree-removed-hook' with it.
@@ -624,7 +624,7 @@ pointing at a directory that was gone."
                        (list (file-truename path)))))
       ;; The one question a group is asked.
       (setq told nil)
-      (clrhash ecc-worktree--cache)
+      (clrhash ecc-git--cache)
       (let ((one (ecc-worktree-create directory "feat/y"))
             (two (ecc-worktree-create directory "feat/z")))
         (ecc-worktree-test--with-answer t
@@ -633,7 +633,7 @@ pointing at a directory that was gone."
                        (sort (mapcar #'file-truename (list one two)) #'string<))))
       ;; And the command.
       (setq told nil)
-      (clrhash ecc-worktree--cache)
+      (clrhash ecc-git--cache)
       (let ((path (ecc-worktree-create directory "feat/w")))
         (ecc-worktree-remove path)
         (should (equal (mapcar #'file-truename told)
@@ -654,7 +654,7 @@ pointing at a directory that was gone."
         (should (= 1 (length asked)))
         (should (string-match-p "Remove the worktree" (car asked))))
       (should-not (file-directory-p path))
-      (should (member "feat/x" (ecc-worktree-branches directory))))))
+      (should (member "feat/x" (ecc-git-branches directory))))))
 
 (ert-deftest ecc-worktree-test-remove-worktree-stops-a-nested-session ()
   "A session in a project of its own inside the worktree is stopped too.
@@ -792,7 +792,7 @@ cover, and it is the one that used to leave the directory behind."
               (ecc-kill session)
               (should (= 1 (length asked)))))
           (should-not (file-directory-p path))
-          (should (member "feat/x" (ecc-worktree-branches directory))))))))
+          (should (member "feat/x" (ecc-git-branches directory))))))))
 
 (ert-deftest ecc-worktree-test-two-sessions-leaving-together-ask-once ()
   "Two sessions of one worktree stopped in a row are one question.
@@ -851,8 +851,8 @@ first has already taken away."
         (should (= 1 (length asked))))
       (should-not (file-directory-p one))
       (should-not (file-directory-p two))
-      (should (member "feat/x" (ecc-worktree-branches directory)))
-      (should (member "feat/y" (ecc-worktree-branches directory))))))
+      (should (member "feat/x" (ecc-git-branches directory)))
+      (should (member "feat/y" (ecc-git-branches directory))))))
 
 (ert-deftest ecc-worktree-test-context-root-climbs-to-the-parent ()
   "A command run in a linked worktree acts on the repository it came from."
@@ -919,7 +919,7 @@ origin/develop holds."
     (ecc-worktree-test--git directory "merge" "-q" "--no-edit" branch)
     (ecc-worktree-test--git directory "update-ref" "refs/remotes/origin/develop"
                             "HEAD")
-    (ecc-worktree-forget)
+    (ecc-git-forget)
     path))
 
 (defmacro ecc-worktree-test--with-gh (answer &rest body)
@@ -970,12 +970,12 @@ Its base is BASE, develop by default."
 
 (ert-deftest ecc-worktree-test-parse-locked ()
   "A locked worktree keeps git's reason, and t when git gave none."
-  (let ((entries (ecc-worktree-parse ecc-worktree-test--porcelain)))
-    (should (equal (ecc-worktree-entry-locked-p (nth 1 entries))
+  (let ((entries (ecc-git-parse-worktrees ecc-worktree-test--porcelain)))
+    (should (equal (ecc-git-worktree-entry-locked-p (nth 1 entries))
                    "claude session feat/plugins"))
-    (should-not (ecc-worktree-entry-locked-p (nth 2 entries))))
-  (should (eq t (ecc-worktree-entry-locked-p
-                 (cadr (ecc-worktree-parse
+    (should-not (ecc-git-worktree-entry-locked-p (nth 2 entries))))
+  (should (eq t (ecc-git-worktree-entry-locked-p
+                 (cadr (ecc-git-parse-worktrees
                         "worktree /r\nHEAD 1\n\nworktree /r/w\nHEAD 2\nlocked\n"))))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-a-merged-worktree ()
@@ -994,7 +994,7 @@ Its base is BASE, develop by default."
       (should (string-match-p "\\`removed .*feat-x/ (branch feat/x kept; merged: its tip is in origin/develop)\\'"
                               (car lines)))
       (should-not (file-directory-p path))
-      (should (member "feat/x" (ecc-worktree-branches directory)))
+      (should (member "feat/x" (ecc-git-branches directory)))
       (should (= 1 (length removed)))
       ;; The calling session is in the repository, not the worktree.
       (should (equal '("caller") (mapcar #'ecc-session-name
@@ -1135,7 +1135,7 @@ pull request merged into another feature branch has not landed."
                  "\\`removed .*merged: pull request #101 into develop was merged with its tip)\\'"
                  (car (ecc-worktree-test--remove path)))))
       (should-not (file-directory-p path))
-      (should (member "feat/x" (ecc-worktree-branches directory))))))
+      (should (member "feat/x" (ecc-git-branches directory))))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-refuses-without-a-remote ()
   "With no remote there is nothing to be merged into, and no guess."

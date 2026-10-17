@@ -105,16 +105,16 @@ say how many were asked since."
 
 (defun demo-report-git ()
   "Say what worktrees and what branches the repository has."
-  (let* ((trees (seq-remove #'ecc-worktree-entry-main-p
-                            (ecc-worktree-list demo-root)))
+  (let* ((trees (seq-remove #'ecc-git-worktree-entry-main-p
+                            (ecc-git-worktrees demo-root)))
          (names (mapcar (lambda (entry)
                           (file-name-nondirectory
                            (directory-file-name
-                            (ecc-worktree-entry-path entry))))
+                            (ecc-git-worktree-entry-path entry))))
                         trees)))
     (demo-say (format "git worktree list: %s      git branch: %s"
                       (if names (string-join names ", ") "(only the repository)")
-                      (string-join (sort (ecc-worktree-branches demo-root)
+                      (string-join (sort (ecc-git-branches demo-root)
                                          #'string<)
                                    ", "))))
   nil)

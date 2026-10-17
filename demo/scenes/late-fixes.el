@@ -7,7 +7,7 @@
 ;;
 ;; * a session in a worktree is named by its branch, so the Space and
 ;;   the session under it are one spelling rather than two
-;;   (`ecc-worktree-session-name');
+;;   (`ecc-git-session-name');
 ;; * `a' and `d' in the sidebar and in the dashboard ask before they
 ;;   answer, and neither answers a tool of `ecc-answer-exclude-tools' --
 ;;   a shell command is read in the transcript, not from a row;

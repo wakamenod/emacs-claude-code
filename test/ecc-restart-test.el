@@ -35,7 +35,7 @@ and the registry are empty directories of their own."
           (ecc-stop-grace 2.0))
      (set-file-modes bin #o755)
      (unwind-protect
-         (cl-letf (((symbol-function 'ecc-review-ensure-baseline) #'ignore)
+         (cl-letf (((symbol-function 'ecc-git-ensure-baseline) #'ignore)
                    ((symbol-function 'ecc--enable-session-modes) #'ignore)
                    ((symbol-function 'ecc-window-select-session) #'ignore))
            ,@body)

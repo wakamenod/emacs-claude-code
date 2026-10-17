@@ -61,7 +61,7 @@
 (defun demo-report-baseline ()
   "Say what the session took as its baseline."
   (demo-say (format "baseline tree of the session: %s"
-                    (or (ecc-review-ensure-baseline demo-session) "(none)")))
+                    (or (ecc-git-ensure-baseline demo-session) "(none)")))
   nil)
 
 ;;;; The work, done where no tool stream would see it

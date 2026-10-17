@@ -56,6 +56,7 @@
 (require 'transient)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-window)
 (require 'ecc-review)
 (require 'ecc-review-pr)
@@ -149,9 +150,9 @@ more -- BEHIND is then the symbol `gone'.  Nil without an UPSTREAM."
 Of each branch that has one, to (UPSTREAM AHEAD BEHIND), from one call
 of git: what a list of branches shows beside them
 \(`ecc-review-menu--distance')."
-  (pcase (ecc-review--git root "for-each-ref"
-                          "--format=%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)"
-                          "refs/heads")
+  (pcase (ecc-git-run root "for-each-ref"
+                      "--format=%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)"
+                      "refs/heads")
     (`(0 . ,output)
      (delq nil (mapcar (lambda (line)
                          (pcase-let ((`(,ref ,upstream ,track) (split-string line "\0")))
@@ -179,9 +180,9 @@ for all of them at once (`ecc-review-menu--all-distances')."
 points at; :branches the local and then the remote branches, without
 the symbolic origin/HEAD, which names one of them again; :upstreams an
 alist of each local branch that has an upstream to that upstream."
-  (pcase (ecc-review--git root "for-each-ref"
-                          "--format=%(HEAD)%00%(refname)%00%(upstream:short)%00%(symref)"
-                          "refs/heads" "refs/remotes")
+  (pcase (ecc-git-run root "for-each-ref"
+                      "--format=%(HEAD)%00%(refname)%00%(upstream:short)%00%(symref)"
+                      "refs/heads" "refs/remotes")
     (`(0 . ,output)
      (let (current upstream origin-head locals remotes upstreams)
        (dolist (line (split-string output "\n" t))
@@ -282,7 +283,7 @@ A plist of :staged, :unstaged and :untracked, each a list of paths
 relative to ROOT.  One call reads the working tree once for the three
 counts that each took a `git diff' of their own -- and a listing of the
 untracked files besides -- before."
-  (pcase (ecc-review--git root "status" "--porcelain=v1" "-z" "--untracked-files=all")
+  (pcase (ecc-git-run root "status" "--porcelain=v1" "-z" "--untracked-files=all")
     (`(0 . ,output)
      (let ((fields (split-string output "\0" t))
            staged unstaged untracked)
@@ -306,7 +307,7 @@ The diff of FORK against the working tree, which is what the review of
 `b' shows -- a file a commit changed and the working tree put back is
 in neither -- and the untracked files, which STATUS, the
 `ecc-review-menu--status' of ROOT, has read already."
-  (pcase (ecc-review--git root "diff" "--name-only" "-z" fork "--")
+  (pcase (ecc-git-run root "diff" "--name-only" "-z" fork "--")
     (`(0 . ,output)
      (length (delete-dups (append (split-string output "\0" t)
                                   (plist-get status :untracked)))))
@@ -318,17 +319,17 @@ Nil without a session or with `ecc-review-menu-count-session-changes'
 off, and a string saying why when it could not be counted -- a count
 of none is a number, 0, which a failure must not pass for."
   (when (and session ecc-review-menu-count-session-changes)
-    (let ((root (ecc-review-git-root (or (ecc-session-project-root session)
-                                         default-directory))))
+    (let ((root (ecc-git-root (or (ecc-session-project-root session)
+                                  default-directory))))
       (if (not root)
           (length (ecc-review-files session))
         (let ((base (or (ecc-session-baseline session) (ecc-review--head-tree root)))
-              (now (ecc-review-snapshot root)))
+              (now (ecc-git-snapshot root)))
           (cond
            ((not base) "there is no tree to compare with")
            ((not now) "the working tree could not be read")
-           (t (pcase (ecc-review--git root "diff" "--name-only" "-z" "--no-renames"
-                                      base now "--")
+           (t (pcase (ecc-git-run root "diff" "--name-only" "-z" "--no-renames"
+                                  base now "--")
                 (`(0 . ,output) (length (split-string output "\0" t)))
                 (`(,code . ,_) (format "git diff failed (exit %s)" code))
                 (_ "git cannot be run")))))))))
@@ -424,8 +425,8 @@ the same commits by id opens the same review."
     (when (equal to-id from-id)
       (setq to-id nil))
     ;; TO older than FROM: swap them.
-    (when (and to-id (eq 0 (car (ecc-review--git root "merge-base" "--is-ancestor"
-                                                  to-id from-id))))
+    (when (and to-id (eq 0 (car (ecc-git-run root "merge-base" "--is-ancestor"
+                                             to-id from-id))))
       (cl-rotatef from-id to-id))
     (if (null to-id)
         (ecc-review-commit-alone root from-id)
@@ -462,7 +463,7 @@ D-SESSION is the session of `D', SESSION by default.  LIGHT leaves the
 counts out: what a choice run without the menu needs is where to
 review, not how much."
   (let* ((d-session (or d-session session))
-         (root (and directory (ecc-review-git-root directory)))
+         (root (and directory (ecc-git-root directory)))
          (refs (and root (ecc-review-menu--refs root)))
          (guess (and root (ecc-review-menu-guess-base root refs))))
     (list :session session :d-session d-session :directory directory :root root
@@ -669,8 +670,8 @@ branches is not eighty processes."
 
 (defun ecc-review-menu--commits (root)
   "Return the recent commits of ROOT as \"ID SUBJECT\" lines, newest first."
-  (pcase (ecc-review--git root "log" "--no-color" "--format=%h %s"
-                          "-n" (number-to-string ecc-review-menu-commit-count))
+  (pcase (ecc-git-run root "log" "--no-color" "--format=%h %s"
+                      "-n" (number-to-string ecc-review-menu-commit-count))
     (`(0 . ,output) (split-string output "\n" t))))
 
 (defun ecc-review-menu--commit-of (answer)
