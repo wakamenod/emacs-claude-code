@@ -53,7 +53,7 @@ def greet(name):
 
 <Video name="at-cursor" label="A prompt with @cursor in it: the reference becomes the file and the line the point was on, and the code goes with it" />
 
-In the prompt region, `@` points at code. The first three are words you type as they are; the last two are `@` followed by a file's path:
+In the prompt region, `@` points at code or at another session. The first three are words you type as they are; the next two are `@` followed by a file's path, and the last is `@session:` followed by a session's name:
 
 | Reference | Sends |
 |---|---|
@@ -62,12 +62,15 @@ In the prompt region, `@` points at code. The first three are words you type as 
 | `@diagnostics` | The Flymake or Flycheck diagnostics of the buffer |
 | `@` and a file with lines, as in `@src/reader.py:10-40` | Those lines of the file |
 | `@` and a file, as in `@src/reader.py` | The path, for the CLI to read |
+| `@session:` and a session, as in `@session:feat/parser` | The session's name and the address Claude sends it a message at |
 
 Emacs expands the first four before sending: the reference becomes a short label, and the content goes in a quoted block under the prompt. `@region`, `@cursor` and `@diagnostics` read the buffer you were editing before you went to the session. The echo area says what was attached, and warns when `@region` had no region.
 
 A file given by path alone is read by the CLI, and the transcript shows nothing for it.
 
-`TAB` after `@` offers the three words and the project's files. A path that starts with `/`, `~/`, `./` or `../` completes from anywhere, one directory at a time, as in `find-file`. A relative path is relative to the session's project. Remote (TRAMP) paths are not completed: the CLI cannot read them.
+`@session:` names another Claude session running on the machine, in Emacs or in a terminal, so that Claude can send it a message with the CLI's `SendMessage`. A session that is no longer running when you send is left as written, and the echo area says so. A message another session sends shows in the transcript under the name of that session.
+
+`TAB` after `@` offers the three words, the other sessions and the project's files. A path that starts with `/`, `~/`, `./` or `../` completes from anywhere, one directory at a time, as in `find-file`. A relative path is relative to the session's project. Remote (TRAMP) paths are not completed: the CLI cannot read them.
 
 ## Editor context
 

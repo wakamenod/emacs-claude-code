@@ -13,7 +13,43 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 ## [Unreleased]
 
-Verified against **Claude Code CLI 2.1.290**.
+Verified against **Claude Code CLI 2.1.296**; the entries under Changed and
+Fixed against 2.1.290.
+
+### Added
+
+- Claude sessions send each other messages with the CLI's own
+  `SendMessage`, addressed to a socket every running CLI names in its
+  session file; ecc relays nothing, and now shows and aims them.
+
+  A message another session sent is drawn as one. The CLI starts a turn
+  with it and echoes it synthetic, so ecc passed it over and the answer
+  landed under a `(resumed)` turn with no prompt. Its body is now the
+  prompt of that turn, in a band of its own colour (`ecc-peer-face`)
+  under a line naming the sender (`ecc-peer-heading-face`): by the name
+  it has in this Emacs when the registry still finds its process, and
+  by the CLI's name otherwise. A recording read back draws it the same
+  way, and the resume list, the dashboard and the search take its body
+  for the prompt. One that arrives while a turn runs is absorbed into
+  that turn by the CLI and is not shown.
+
+  `@session:NAME` in a prompt names another running session, in this
+  Emacs, another one or a terminal. `@` completes it, offering the
+  sessions whose CLI takes messages other than the session itself, the
+  usage probe and an inline question, annotated with where each works,
+  its status and whether it runs here. A session of this Emacs goes by
+  the name it has here -- the CLI derives a name of its own and hears of
+  Emacs's only after a rename -- and is found by session id; a name
+  taken twice gets the process id after it, `NAME<PID>`. At send the
+  reference becomes a label with the address the session's process has
+  then and the name `ListAgents` lists it under. A session that is not
+  running is left as written and reported in the echo area.
+
+  The brief `start_worktree_session` hands a new session ends with the
+  address of the session that handed the work over, read from the
+  registry at that moment, so that it can report back without being
+  written to first. Nothing is added when the registry has no socket for
+  it.
 
 ### Changed
 

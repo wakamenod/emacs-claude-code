@@ -152,6 +152,15 @@ that tests cannot see each other."
            (expand-file-name "ecc-test-no-settings/" temporary-file-directory))
           (ecc-protocol-managed-files nil)
           (process-environment (cons "ANTHROPIC_MODEL=" process-environment))
+          ;; The sessions running on the machine are offered after `@'
+          ;; (`ecc-peer-candidates'), so a test reads a registry that
+          ;; holds none unless it writes one of its own; one a harness
+          ;; around this has bound already is left as it is.
+          (ecc-registry-directory
+           (if (equal ecc-registry-directory
+                      (expand-file-name "sessions/" (ecc-config-directory)))
+               (expand-file-name "ecc-test-no-registry/" temporary-file-directory)
+             ecc-registry-directory))
           (,var (ecc-model-create-session
                  :name "test"
                  :project-root temporary-file-directory)))

@@ -368,6 +368,20 @@ The band is a background; the mark is what gives it a colour of its
 own, so that the eye finds where a turn begins."
   :group 'ecc)
 
+(defface ecc-peer-face
+  '((((background dark))  :extend t :background "#283b55")
+    (((background light)) :extend t :background "#dfe8f5")
+    (t :inherit font-lock-type-face))
+  "Face for the band a message another Claude session sent is drawn in.
+It is the band of `ecc-user-face\=' in another colour: the message
+opens a turn the way a prompt does, but the user did not write it."
+  :group 'ecc)
+
+(defface ecc-peer-heading-face
+  '((t :inherit (bold font-lock-type-face)))
+  "Face of the line naming the session a message came from."
+  :group 'ecc)
+
 (defface ecc-assistant-face
   '((t :inherit default))
   "Face for assistant text."

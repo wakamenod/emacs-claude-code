@@ -353,8 +353,11 @@ the CLI answers it like any other prompt, but it is not part of the
 conversation the user is reading, so it is kept out of the
 transcript."
   id start-time end-time prompt children result cost transient
-  label)        ; heading of a turn nobody prompted, see
+  label         ; heading of a turn nobody prompted, see
                 ; `ecc-model-aside-turn'
+  sender)       ; alist naming the session whose message PROMPT is,
+                ; nil for one the user sent: `from', `name', `mode'
+                ; and `session', the name it has here
 
 (cl-defstruct ecc-node
   "One item in the transcript tree."
@@ -608,14 +611,16 @@ the error an exit is."
 
 ;;;; Turns
 
-(defun ecc-model-begin-turn (session prompt)
+(defun ecc-model-begin-turn (session prompt &optional sender)
   "Start a turn in SESSION for PROMPT and return it.
 The CLI does not announce the start of a turn, so Emacs decides it
-when the prompt goes out."
+when the prompt goes out.  SENDER is the session PROMPT is a message
+from, for one that did not come from the user (`ecc-turn\=')."
   (let ((turn (make-ecc-turn
                :id (format "turn-%d" (cl-incf (ecc-session-turn-counter session)))
                :start-time (current-time)
-               :prompt prompt)))
+               :prompt prompt
+               :sender sender)))
     (setf (ecc-session-turns session)
           (nconc (ecc-session-turns session) (list turn)))
     (setf (ecc-session-current-turn session) turn)
@@ -640,6 +645,15 @@ starting or finishing."
     (setf (ecc-session-current-turn session) turn)
     (ecc-model-set-state session 'running)
     turn))
+
+(defun ecc-model-sender-name (sender)
+  "Return what to call the session SENDER of a turn by (`ecc-turn\=').
+The name it has in this Emacs, then the one its CLI gave it, then its
+address."
+  (or (alist-get 'session sender)
+      (alist-get 'name sender)
+      (alist-get 'from sender)
+      "another session"))
 
 (defconst ecc-model-remote-turn-label "(remote)"
   "Heading of a turn somebody started from the Remote Control bridge.")

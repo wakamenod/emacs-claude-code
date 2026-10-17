@@ -70,6 +70,7 @@
 (require 'ecc-sync)
 (require 'ecc-answer)
 (require 'ecc-registry)
+(require 'ecc-peer)
 (require 'ecc-history)
 (require 'ecc-restore)
 (require 'ecc-search)

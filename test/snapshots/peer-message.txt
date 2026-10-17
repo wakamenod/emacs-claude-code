@@ -1,0 +1,8 @@
+
+✉ Message from feat/parent
+〉 Capture test: reply with the single word ack. 日本語の本文もここに。
+
+  ack
+ 3.0s · $0.0095
+
+ 
