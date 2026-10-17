@@ -59,6 +59,7 @@
 (require 'ecc-window)
 (require 'ecc-review)
 (require 'ecc-review-pr)
+(require 'ecc-review-resume)
 (require 'ecc-lifecycle)
 
 (defcustom ecc-review-menu-count-session-changes t
@@ -975,6 +976,16 @@ when a review is opened, and the comments go to it
     (ecc-review-menu-set-session session))
   (ecc-review-menu--say-why))
 
+(transient-define-suffix ecc-review-menu-resume ()
+  "Take up again a review that was closed, or open when Emacs exited.
+`ecc-review-resume': which session the menu is about does not matter,
+the saved reviews being offered for every session.  Off while none is
+saved."
+  :description "resume a review…"
+  :inapt-if-not #'ecc-review-resume-saved-p
+  (interactive)
+  (call-interactively #'ecc-review-resume))
+
 (transient-define-infix ecc-review-menu--in-ediff ()
   "Open this one review in ediff, leaving `ecc-review-style' as it is."
   :class 'transient-switch
@@ -1015,7 +1026,8 @@ files each review would show.  What the session
 changed since it started is `ecc-review'; the rest is
 `ecc-review-range' against the range the choice names.  -f asks for
 the files to keep once the comparison is chosen, and -e opens this one
-review the other way from `ecc-review-style'."
+review the other way from `ecc-review-style'.  R takes up a review
+closed before, with its comments not sent (`ecc-review-resume')."
   [:description ecc-review-menu--header
    [:description ecc-review-menu--compare-heading
     ("D" ecc-review-menu-session-changes)
@@ -1030,7 +1042,9 @@ review the other way from `ecc-review-style'."
     ("-f" "only these files…" "--files")
     ("-e" ecc-review-menu--in-ediff)
     ("-e" ecc-review-menu--in-diff)
-    ("S" ecc-review-menu-switch-session)]]
+    ("S" ecc-review-menu-switch-session)]
+   ["Saved"
+    ("R" ecc-review-menu-resume)]]
   (interactive)
   ;; The suffixes reach into the whole package, and a menu opened from a
   ;; cold Emacs has loaded this file alone.

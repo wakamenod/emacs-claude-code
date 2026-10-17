@@ -3434,7 +3434,7 @@ p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
        C-l -recenter |        * -refine region   |         l -list the comments
    v/V -scroll up/dn |   ## -ignore whitespace   |     a -show or hide Claude's
    </> -scroll lt/rt |         #c -ignore case   |   C-c C-c -send new comments
-  s -list the files  |         m -wide display   |     C-c C-k -drop the review
+  s -list the files  |         m -wide display   |    C-c C-k -close the review
  / -filter the files |      RET -open the file   |          q -close the review
 =====================|===========================|=============================
     i -status info   |     ? -help off           |      ! -read the files again
@@ -3453,7 +3453,8 @@ what you say, and moving point brings the other side along.  Here, c is
 about the whole difference and RET opens its file.  Both buffers are
 read-only: Claude changes the files, from the comments you send.
 C-c C-c sends those not sent yet and keeps the review open: the sent ones
-stay, dimmed, for Claude's replies."
+stay, dimmed, for Claude's replies.  A review closed keeps the comments
+not sent, and R in the review menu takes it up again."
   "What `?\\=' shows in the control panel of an ediff review.")
 
 (defun ecc-review-ediff--long-help-message ()
@@ -3856,9 +3857,13 @@ session left to drive."
 (defun ecc-review-ediff-quit (control)
   "Quit the ediff review in CONTROL, which closes it and its buffers.
 This is what `ecc-review--close-function\\=' is set to: a review that
-laid out its own windows puts them back rather than being killed."
+laid out its own windows puts them back rather than being killed.
+`ecc-review-closing-functions' are told first: `ediff-really-quit'
+clears the differences before `ediff-quit-hook' runs, and with them
+every line of the review."
   (when (buffer-live-p control)
     (with-current-buffer control
+      (run-hook-with-args 'ecc-review-closing-functions control)
       (ediff-really-quit nil))))
 
 (defun ecc-review-ediff--state (hash)

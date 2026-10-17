@@ -1099,6 +1099,20 @@ here when it is wanted.")
 What Claude moves over MCP, and what the files pane moves, is no
 command of the review's own, so `post-command-hook\=' does not hear it.")
 
+(defvar ecc-review-closing-functions nil
+  "Functions called with a review buffer that is about to close.
+A diff review as it is killed, by \\[ecc-review-quit] or any other way,
+and the control buffer of an ediff review as it is quit
+\(`ecc-review-ediff-quit'), while all of it is still there: its
+comments, its reading and its windows.  The
+review of a proposal comes here too, and `ecc-review-buffer-p' tells it
+apart.  `ecc-review-resume.el' saves the review here.")
+
+(defun ecc-review--closing ()
+  "Tell `ecc-review-closing-functions' that this review is closing.
+On the `kill-buffer-hook' of a diff review."
+  (run-hook-with-args 'ecc-review-closing-functions (current-buffer)))
+
 (defvar-local ecc-review--comments nil
   "Overlays drawing the comments, one per place that carries any.")
 
@@ -1475,7 +1489,7 @@ on, point and the window are left as they were and that is said."
   /         filter the files           a         show or hide Claude's
   g         read the diff again        C-c C-c   send the new comments
   q         bury the review            C-u C-c C-c  edit them, then send
-  ] / [     next, previous commit      C-c C-k   drop the review
+  ] / [     next, previous commit      C-c C-k   close the review
                                        C-c C-a   send every commit's
 Claude
   T         ask for a tour of the review
@@ -1484,7 +1498,8 @@ Claude
 
 C-c C-c sends the comments not sent yet and keeps the review open: the
 sent ones stay, dimmed, for Claude's replies, and the next C-c C-c sends
-only those made since.  q buries the review and C-c C-k drops it.
+only those made since.  q buries the review and C-c C-k closes it,
+keeping the comments not sent: R in the review menu takes it up again.
 
 ] and [ go through the commits of a pull request opened with p in the
 review menu, and C-c C-a sends the comments of all of them not sent yet
@@ -1546,6 +1561,7 @@ denies the proposal."
                                           (list ecc-review-mode-map diff-mode-shared-map)))
                                   minor-mode-overriding-map-alist)))
   (setq header-line-format '(:eval (ecc-review--header-line)))
+  (add-hook 'kill-buffer-hook #'ecc-review--closing nil t)
   (ecc-review--watch-files))
 
 (defun ecc-review-buffer-name (session &optional request range label)
@@ -4326,7 +4342,9 @@ review to those files."
 (define-obsolete-function-alias 'ecc-review-worktree #'ecc-review-range "0.4.0")
 
 (defun ecc-review-quit ()
-  "Close the review buffer, dropping its comments."
+  "Close the review buffer.
+The comments not sent yet go with it, kept to be brought back by
+\\[ecc-review-resume] along with the review and the place in it."
   (interactive)
   (ecc-review--close (current-buffer)))
 
