@@ -42,6 +42,27 @@ Verified against **Claude Code CLI 2.1.290**.
   (with-eval-after-load 'ecc
     (define-key ecc-global-map "G" #'ecc-review-range))
   ```
+- What ecc asks git about a directory is in a new module, `ecc-git.el`,
+  which requires `ecc-core` and `ecc-model` and nothing else. The
+  questions about worktrees and branches come out of `ecc-worktree.el`, and
+  the snapshot a session's review is taken against out of `ecc-review.el`,
+  renamed to their new home: `ecc-worktree-list`, `-main`, `-branch`,
+  `-branches`, `-ahead-behind`, `-of-branch`, `-toplevel`, `-session-name`,
+  `-parse` and `-forget` are `ecc-git-worktrees`, `ecc-git-main-worktree`,
+  `ecc-git-branch`, `ecc-git-branches`, `ecc-git-ahead-behind`,
+  `ecc-git-worktree-of-branch`, `ecc-git-toplevel`, `ecc-git-session-name`,
+  `ecc-git-parse-worktrees` and `ecc-git-forget`, and the struct
+  `ecc-worktree-entry` is `ecc-git-worktree-entry`; `ecc-review-git-root`,
+  `ecc-review-snapshot` and `ecc-review-ensure-baseline` are `ecc-git-root`,
+  `ecc-git-snapshot` and `ecc-git-ensure-baseline`. The two git runners
+  share one body, `ecc-git-run` for what the review parses and
+  `ecc-git-run-with-stderr` for what the worktree commands show, and
+  `ecc-worktree-git-executable` and `ecc-review-git-executable` are one
+  variable, `ecc-git-executable`. Starting a session names it and takes
+  its baseline from `ecc-git` alone, so with the Spaces off `ecc-start`
+  no longer reaches into `ecc-worktree.el` to name a session, and neither
+  it nor opening a recording declares a function of `ecc-review.el`. The
+  same git commands run, with the same ten-second cache.
 
 ### Fixed
 
