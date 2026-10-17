@@ -69,8 +69,8 @@
 (require 'ecc-notify)
 (require 'ecc-history)
 (require 'ecc-lifecycle)
+(require 'ecc-chat)
 
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
 (declare-function ecc-sidebar-redraw "ecc-sidebar" (&rest _))
 
@@ -728,7 +728,6 @@ no role and no dedication: from here on it is the user\='s to arrange.
 NO-REUSE says the caller would rather show nothing than take a window
 away from another session: nil comes back instead, and the session goes
 on running without a window."
-  (require 'ecc-session)
   (let ((buffer (ecc-session-ensure-buffer session)))
     (ecc-space-select (ecc-space-of-root (ecc-window-session-project session)))
     (or (get-buffer-window buffer)
@@ -863,7 +862,6 @@ Point stays in the buffer it was in when that is still on the screen,
 and goes to the first session when it is not.  It is moved without
 touching `buffer-list\=', which is the order the slots are filled in:
 laying the same Space out again keeps every session in its slot."
-  (require 'ecc-session)
   (let* ((main (or (ecc-space--main-window)
                    (user-error "No window here to lay the Space out in")))
          (selected (window-buffer (selected-window)))
@@ -968,7 +966,6 @@ when the buffer is quit.  Only where there is no such window is a
 session window divided: to the right when each half would be
 `ecc-space--divide-right-width' wide, below it when not, and never so
 that a transcript is lost."
-  (require 'ecc-session)
   (let ((session-window (ecc-space-display-session session)))
     (or (get-buffer-window buffer)
         (when-let* ((source (ecc-space--popup-window)))

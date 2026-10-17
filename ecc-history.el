@@ -55,9 +55,8 @@
 (require 'ecc-dispatch)
 (require 'ecc-registry)
 (require 'ecc-window)
-
-(declare-function ecc-render-refresh "ecc-render" (session))
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
+(require 'ecc-render)
+(require 'ecc-chat)
 
 (defvar ecc-history-page-turns 50
   "Number of turns read when a recorded conversation is opened.")
@@ -393,7 +392,6 @@ is drawn again from the top.  Returns the number read."
 A page read at the front moves every turn, so the whole buffer is
 drawn rather than the live region alone."
   (when (buffer-live-p (ecc-session-buffer session))
-    (require 'ecc-render)
     (ecc-render-refresh session)))
 
 (defun ecc-history-more-p (session)
@@ -629,7 +627,6 @@ Interactively the recordings are offered by name."
            (cdr (assoc (completing-read "Session: " (mapcar #'car names) nil t)
                        names)))))
   (let ((session (ecc-history-session session-id)))
-    (require 'ecc-session)
     (ecc-session-ensure-buffer session)
     (when (null (ecc-session-turns session))
       (ecc-history-load session))
@@ -669,12 +666,10 @@ the CLI would run twice on the same recording."
              (ecc-history-file (ecc-session-id session)))
     (ecc-history-load session))
   (setf (ecc-session-kind session) 'own)
-  (require 'ecc-session)
   (ecc-session-ensure-buffer session)
   ;; A session resumed in the Emacs that started it keeps the baseline it
   ;; began with -- this restarts the CLI, not the work -- and one read
   ;; back from a recording takes its first here.
-  (require 'ecc-review)
   (ecc-git-ensure-baseline session)
   (ecc-proc-start session #'ecc-dispatch t fork)
   ;; Noted after the start, which would otherwise be the one to forget it.
@@ -784,7 +779,6 @@ again."
     (ecc-model-set-session-id session id)
     (when file
       (puthash id file ecc-history--files))
-    (require 'ecc-render)
     (ecc-render-refresh session)
     (ecc-history-resume session)
     (message "%s is now %s; %s was left where it was"
