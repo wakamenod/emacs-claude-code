@@ -68,6 +68,7 @@ In the panel that `?` shows, `c` comments on the current difference, or replies 
 | `s` / `/` | [List or filter the files](/emacs-claude-code/features/review/#listing-and-filtering-the-files) |
 | `T` / `t` / `M` | [Talk to Claude](/emacs-claude-code/features/review-claude/#talking-to-claude-from-the-review) |
 | `u` / `d` | Scroll the reply pane back / on |
+| `,` / `.` | Show the previous / next turn in the reply pane |
 | `y` | Answer what Claude is waiting for, shown in the reply pane |
 | `\|` | Stack the sides, or put them side by side |
 | `!` | Read the files again (there is no `g`) |
@@ -84,7 +85,7 @@ The session is out of sight while ediff has the frame. The pane shows the sessio
 
 <Video name="ediff-reply" label="T pressed in an ediff review, and Claude's tour streaming into the reply pane at the bottom, with a line for each tool it calls" />
 
-Each turn replaces the last; the whole conversation stays in the transcript. The pane is never selected. `u` and `d` scroll it from the review; once you scroll back, it stops following the end until the end is in view again.
+Each turn replaces the last, and `,` and `.` step back and forth through the earlier ones. The whole conversation stays in the transcript. While the pane shows an earlier turn, it stays on that turn and `M` quotes it with your message. The next turn brings the pane back to the latest. The header line of the pane lists its keys, and its mode line says which turn it shows. The pane is never selected. `u` and `d` scroll it from the review; once you scroll back, it stops following the end until the end is in view again.
 
 When Claude asks for permission, asks a question or has a plan to approve, the pane shows the request and `y` answers it, without leaving the review:
 
