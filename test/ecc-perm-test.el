@@ -510,6 +510,26 @@ after the request was found, and `ecc-perm-deny', whose reason does."
       (should (ecc-session-pending session))
       (should-not (ecc-test-sent-messages)))))
 
+(ert-deftest ecc-perm-test-allow-on-a-plan-approves-it ()
+  "`a' on a plan approves it as it stands, switching to the default mode.
+The setting still answers to the name it had in `ecc-plan'."
+  (ecc-test-with-fake-session session
+    (let ((request (ecc-test-feed-until-request session "plan-mode" "計画して")))
+      (should (eq (ecc-request-kind request) 'plan))
+      (should (eq (ecc-perm-allow-request request) 'allow))
+      (should-not (ecc-session-pending session))
+      (let ((response (ecc-test-response 0)))
+        (should (equal (alist-get 'behavior response) "allow"))
+        (should (equal (alist-get 'mode (aref (alist-get 'updatedPermissions response) 0))
+                       ecc-perm-plan-default-mode)))))
+  (ecc-test-with-fake-session session
+    (with-suppressed-warnings ((obsolete ecc-plan-default-mode))
+      (let ((request (ecc-test-feed-until-request session "plan-mode" "計画して"))
+            (ecc-plan-default-mode nil))
+        (should-not ecc-perm-plan-default-mode)
+        (ecc-perm-approve-plan-request request)
+        (should-not (assq 'updatedPermissions (ecc-test-response 0)))))))
+
 (provide 'ecc-perm-test)
 
 ;;; ecc-perm-test.el ends here

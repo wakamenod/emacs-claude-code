@@ -55,7 +55,6 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'dnd)
-(require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-image)
@@ -63,6 +62,7 @@
 (require 'ecc-render)
 (require 'ecc-chat)
 (require 'ecc-session)
+(require 'ecc-visit)
 (require 'ecc-hint)
 (require 'ecc-window)
 (require 'ecc-context)
@@ -919,22 +919,6 @@ are not offered, but one typed out by hand is still accepted."
     ("@diagnostics" . "Send the diagnostics of this file"))
   "The @ references that are not files.")
 
-(defun ecc-prompt-project-files (session)
-  "Return the files of the project of SESSION, relative to its root.
-The project can spell that root another way: projectile names its files
-from the true name, and on macOS a session in /tmp/x/ had every file
-offered as ../../../private/tmp/x/readme.md (2026-10-11).  When the two
-are the same directory, the project's own spelling is what the names
-are taken against."
-  (let* ((root (ecc-session-project-root session))
-         (project (and root (project-current nil root))))
-    (when project
-      (let* ((root (expand-file-name root))
-             (own (expand-file-name (project-root project)))
-             (base (if (file-equal-p root own) own root)))
-        (mapcar (lambda (file) (file-relative-name file base))
-                (project-files project))))))
-
 (defconst ecc-prompt-at-path-regexp "\\`\\(?:/\\|~/\\|\\.\\.?/\\)"
   "What an @ reference starts with when it is a path rather than a project file.
 An absolute path, one under the home directory, and one relative to the
@@ -999,7 +983,7 @@ project.  A remote path is not completed."
                      (lambda (_string)
                        (append (mapcar #'car ecc-prompt-at-specials)
                                (mapcar (lambda (file) (concat "@" file))
-                                       (ecc-prompt-project-files session)))))
+                                       (ecc-visit-project-files session)))))
                     :exclusive 'no
                     :annotation-function
                     (lambda (candidate)

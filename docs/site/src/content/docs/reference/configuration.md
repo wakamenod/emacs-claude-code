@@ -19,7 +19,7 @@ The feature pages also name a few variables that are not in customize; set those
 |---|---|---|
 | `ecc-executable` | `"claude"` | The Claude Code CLI: a name on `PATH` or a path |
 | `ecc-permission-mode` | `nil` | The mode a session starts in (`--permission-mode`): `"default"`, `"acceptEdits"`, `"plan"`, `"auto"` or `"bypassPermissions"`. `nil` keeps the CLI's default |
-| `ecc-plan-default-mode` | `"acceptEdits"` | The mode an approved plan switches to when you choose none. `nil` asks for no change, and the CLI goes back to its default mode |
+| `ecc-perm-plan-default-mode` | `"acceptEdits"` | The mode an approved plan switches to when you choose none. `nil` asks for no change, and the CLI goes back to its default mode. The old name, `ecc-plan-default-mode`, still works |
 | `ecc-prompt-suggestions-enabled` | `nil` | Non-nil passes `--prompt-suggestions`, so the CLI suggests a next prompt |
 | `ecc-command-wrapper-function` | `nil` | A function that receives `(command-list project-root)` and returns the command to run instead |
 | `ecc-disabled-plugins` | `nil` | Plugins (`"name@marketplace"`) to turn off in the sessions ecc starts. The terminal client keeps them |

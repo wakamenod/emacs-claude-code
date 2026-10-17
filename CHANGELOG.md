@@ -65,6 +65,16 @@ Verified against **Claude Code CLI 2.1.290**.
   same git commands run, with the same ten-second cache. A git that cannot
   be started at all is logged in `*ecc-log: git*`, where it used to be
   `*ecc-log: review*` or `*ecc-log: worktree*`.
+- `ecc-plan-default-mode` is `ecc-perm-plan-default-mode`, and the old name
+  still works as an obsolete alias, set before or after ecc loads. Approving
+  a plan request is a permission answer, so it moves from `ecc-plan.el` to
+  `ecc-perm.el` with the option: `ecc-plan-approve-request` is
+  `ecc-perm-approve-plan-request`, also kept as an obsolete alias. The
+  files of a session's project, which the `@` completion offers and `RET`
+  on a path searches, come from `ecc-visit.el`: `ecc-prompt-project-files`
+  is `ecc-visit-project-files`. Neither `ecc-perm.el` nor `ecc-visit.el`
+  declares a function of a module that requires it, or loads one when it
+  is asked. A plan is approved, and a path is found, as before.
 
 ### Fixed
 
