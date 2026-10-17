@@ -78,7 +78,7 @@ interactive Emacs, and starting a CLI fails the test."
                    ;; session catches the error and says it instead.
                    ((symbol-function 'ecc-start)
                     (lambda (&rest args) (push args started))))
-           ,@body
+           (ecc-test-keeping-the-frame ,@body)
            (should-not started))
        (when ecc-restore--timer
          (cancel-timer ecc-restore--timer))
