@@ -22,8 +22,9 @@
 ;; The last are about the modules that register with one above them:
 ;; the interceptors of the prompt region and the MCP tools of
 ;; `ecc-worktree' are in place once their own module is loaded, with
-;; nothing waiting for another to load; and `ecc-proc' alone names the
-;; MCP server on the command line.
+;; nothing waiting for another to load; `ecc-lifecycle' names a session
+;; and takes its baseline without `ecc-worktree' or `ecc-review'; and
+;; `ecc-proc' alone names the MCP server on the command line.
 ;;
 ;; The last four are about `ecc-window' and the Spaces above it:
 ;; `ecc-window' calls into no module that requires it beyond the buffer
@@ -376,6 +377,36 @@ waiting for that module to be loaded by somebody else."
                            (and (assoc "worktree-removal" ecc-mcp--instructions)
                                 t))))
                  '(t t t t))))
+
+(ert-deftest ecc-load-test-lifecycle-names-a-session-without-worktree ()
+  "`ecc-lifecycle' alone names a session in a worktree and takes its baseline.
+Both are `ecc-git', which it requires: neither `ecc-worktree' nor
+`ecc-review' is loaded to answer, as a session started with the Spaces
+off reaches neither."
+  (skip-unless (executable-find "git"))
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (require 'ecc-lifecycle)
+                     (let* ((default-directory
+                             (file-name-as-directory (make-temp-file "ecc-load" t)))
+                            (tree (expand-file-name "tree" default-directory)))
+                       (unwind-protect
+                           (progn
+                             (dolist (args `(("init" "-q" ".")
+                                             ("commit" "-q" "--allow-empty" "-m" "init")
+                                             ("worktree" "add" "-b" "feat/one" ,tree)))
+                               (apply #'call-process "git" nil nil nil
+                                      "-c" "user.name=t" "-c" "user.email=t@example.com"
+                                      args))
+                             (list (ecc-git-session-name tree)
+                                   (and (stringp (ecc-git-ensure-baseline
+                                                  (ecc-model-create-session
+                                                   :name "probe" :project-root tree)))
+                                        t)
+                                   (featurep 'ecc-worktree)
+                                   (featurep 'ecc-review)))
+                         (delete-directory default-directory t)))))
+                 '("feat/one" t nil nil))))
 
 (ert-deftest ecc-load-test-proc-alone-registers-the-mcp-server ()
   "With `ecc-proc' alone loaded, the command line carries --mcp-config.
