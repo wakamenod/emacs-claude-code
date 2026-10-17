@@ -11,7 +11,7 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-transient)
-(require 'ecc-answer)
+(require 'ecc)
 (require 'ecc-review-menu)
 
 (ert-deftest ecc-transient-test-menu-is-a-command ()

@@ -101,6 +101,96 @@
 (require 'ecc-review-menu)
 (require 'ecc-review-talk)
 
+;; The keymap for every buffer is here, above every module, because its
+;; keys name commands of nearly all of them: this file requires each, so
+;; the map needs nothing declared, and no module below has to know the
+;; commands of the ones above it.  The first key pressed -- or the listing
+;; of that key -- loads the whole package, which most of those commands
+;; load on their own anyway.
+;;
+;; The symbol carries the keymap in its function cell as well as its value,
+;; so that it is a prefix command and not only a variable.  A prefix command
+;; is what `C-h', `which-key' and the rest read a prefix key through: bound to
+;; the value, `C-c c' is a complete key sequence running a command, and
+;; nothing offers to list what follows it.  The autoload form below is the
+;; keymap kind, so the binding works before this file is loaded and loads it
+;; when the key -- or the listing of that key -- asks for what is inside.
+;;;###autoload (autoload 'ecc-global-map "ecc" nil t 'keymap)
+(defvar ecc-global-map
+  (let ((map (make-sparse-keymap)))
+    ;; The session.
+    (define-key map (kbd "c") #'ecc-start)
+    ;; Resume itself rather than the menu in front of it: it is the
+    ;; commonest thing done here, and `C-u' is the fork.  `ecc-menu'
+    ;; keeps `ecc-resume-menu' under r, because the fork is worth one
+    ;; form where it is seen before it is pressed.
+    (define-key map (kbd "r") #'ecc-resume)
+    (define-key map (kbd "R") #'ecc-rename-session)
+    (define-key map (kbd "v") #'ecc-show-session)
+    (define-key map (kbd "i") #'ecc-interrupt)
+    (define-key map (kbd "t") #'ecc-tui-open)
+    ;; The Spaces have the lower-case keys, being where the day is spent:
+    ;; `j' goes to one, `b' is the sidebar that lists them, `z' is
+    ;; herdr's zoom and `V' puts the tab back to the arrangement a new
+    ;; Space gets.  `v' goes to the prompt of a session and `V' to the
+    ;; windows around it, which is the pair worth having beside each
+    ;; other.
+    ;;
+    ;; `B' is the dashboard: the capital beside the `b' that is pressed
+    ;; all day, the two being the same list, one that stays on the screen
+    ;; and one that does not.
+    ;;
+    ;; Nothing here makes or removes a worktree.  The three that do
+    ;; belong together and are done in a week what these are done in an
+    ;; hour: they are `ecc-worktree-menu', under `?' then `W'.
+    (define-key map (kbd "j") #'ecc-space-goto)
+    (define-key map (kbd "b") #'ecc-sidebar-focus)
+    (define-key map (kbd "z") #'ecc-space-zoom)
+    (define-key map (kbd "V") #'ecc-space-cycle-layout)
+    ;; Answering what is waiting.
+    (define-key map (kbd "a") #'ecc-answer-allow)
+    (define-key map (kbd "d") #'ecc-answer-deny)
+    (define-key map (kbd "n") #'ecc-next-attention)
+    (define-key map (kbd "N") #'ecc-next-attention-in-project)
+    (define-key map (kbd "1") #'ecc-answer-option-1)
+    (define-key map (kbd "2") #'ecc-answer-option-2)
+    (define-key map (kbd "3") #'ecc-answer-option-3)
+    (define-key map (kbd "4") #'ecc-answer-option-4)
+    ;; Looking around.
+    (define-key map (kbd "B") #'ecc-dashboard)
+    ;; `D' asks what to compare: `D' again is what changed since the
+    ;; session started, `w' what changed since the last commit.
+    (define-key map (kbd "D") #'ecc-review-menu)
+    (define-key map (kbd "h") #'ecc-history-open)
+    (define-key map (kbd "/") #'ecc-search)
+    (define-key map (kbd "U") #'ecc-usage)
+    (define-key map (kbd "?") #'ecc-menu)
+    map)
+  "Keymap of the commands that work from any buffer.
+What is here is the handful worth a key of its own, not everything the
+package can do: `C-c c\=' is the user\='s own key, and a map of forty
+commands leaves no room beside it and no listing anyone can read.  The
+rest is reached through `ecc-menu\='.
+
+Bind the symbol, not the value, to a prefix key:
+
+    (global-set-key (kbd \"C-c c\") \='ecc-global-map)
+
+which makes `ecc-global-map\=' a prefix command, so that
+`describe-prefix-bindings\=' and `which-key\=' can say what follows it.
+With an autoload form of the keymap kind -- generated from this file, or
+written by hand where nothing generates one -- the binding can be made
+before ecc is loaded.
+
+Every key here means in `ecc-menu' what it means here, so that one letter
+carries one meaning wherever it is pressed; `?' opens that menu, which is
+the only way to reach it from a buffer that is not a session.  `r' is the
+one key whose command differs: here it resumes at once, with the fork in
+the prefix argument, while in the menu it opens `ecc-resume-menu', where
+the fork is a switch.  The meaning is the same; only the form differs.")
+
+(defalias 'ecc-global-map ecc-global-map)
+
 ;; The version is written once, in the Version header above, because that
 ;; is the one package.el and `package-vc-install' read.  Repeating it in a
 ;; constant here would mean a release that says two different things, so
