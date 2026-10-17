@@ -3453,7 +3453,9 @@ what you say, and moving point brings the other side along.  Here, c is
 about the whole difference and RET opens its file.  Both buffers are
 read-only: Claude changes the files, from the comments you send.
 C-c C-c sends those not sent yet and keeps the review open: the sent ones
-stay, dimmed, for Claude's replies."
+stay, dimmed, for Claude's replies.  q keeps the comments not sent yet,
+as Emacs exiting does, and R in the review menu takes the review up
+again; C-c C-k drops them, asking first."
   "What `?\\=' shows in the control panel of an ediff review.")
 
 (defun ecc-review-ediff--long-help-message ()
@@ -3856,9 +3858,13 @@ session left to drive."
 (defun ecc-review-ediff-quit (control)
   "Quit the ediff review in CONTROL, which closes it and its buffers.
 This is what `ecc-review--close-function\\=' is set to: a review that
-laid out its own windows puts them back rather than being killed."
+laid out its own windows puts them back rather than being killed.
+`ecc-review-closing-functions' are told first: `ediff-really-quit'
+clears the differences before `ediff-quit-hook' runs, and with them
+every line of the review."
   (when (buffer-live-p control)
     (with-current-buffer control
+      (run-hook-with-args 'ecc-review-closing-functions control)
       (ediff-really-quit nil))))
 
 (defun ecc-review-ediff--state (hash)
@@ -4022,9 +4028,12 @@ ediff lays out its windows; quitting puts back what was on the screen."
                ;; question goes to a minibuffer the control frame does not have
                ;; -- on a graphical Emacs the panel is a frame of its own, small
                ;; enough to show nothing, so q read as a key that did nothing at
-               ;; all (reported 2026-09-16).  A review is closed, not saved:
-               ;; there is nothing to lose by the question and nothing to ask.
-               (define-key ediff-mode-map (kbd "q") #'ecc-review-quit)
+               ;; all (reported 2026-09-16).  q closes the review and keeps
+               ;; its comments not sent for `ecc-review-resume': there is
+               ;; nothing to lose by it and nothing to ask.  C-c C-k, which
+               ;; drops them, asks in the window the key was typed in
+               ;; (`ecc-review-direct--run').
+               (define-key ediff-mode-map (kbd "q") #'ecc-review-close)
                ;; mouse-2 over a line of the help looks the command up in
                ;; the ediff manual, which knows nothing of c, x or l and
                ;; answers them with "Undocumented command!", and so did RET

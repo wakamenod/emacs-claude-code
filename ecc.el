@@ -67,6 +67,7 @@
 (require 'ecc-plan)
 (require 'ecc-review)
 (require 'ecc-review-ediff)
+(require 'ecc-review-resume)
 (require 'ecc-sync)
 (require 'ecc-answer)
 (require 'ecc-registry)

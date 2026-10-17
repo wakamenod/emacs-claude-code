@@ -863,8 +863,10 @@ hunk that is shown can be passed over, one that is not cannot be
 commented on.
 
 So a session started afresh takes one because it has none, a session
-resumed from a recording in a new Emacs takes its first, and a session
-whose CLI was killed and started again keeps the one it began with.  A
+whose CLI was killed and started again keeps the one it began with,
+and so does a session `ecc-restore' brought back into a new Emacs
+while git still has its tree (`ecc-review-restore-baseline').  One
+resumed from a recording that nothing saved takes its first.  A
 session outside git keeps nil and is reviewed from what it recorded
 instead -- and asks git again next time, since a project can be put
 under git while a session runs."
@@ -874,6 +876,28 @@ under git while a session runs."
                                (or (ecc-session-project-root session)
                                    default-directory))))
               (ecc-review-snapshot root)))))
+
+(defun ecc-review-tree-exists-p (root tree)
+  "Return non-nil when the repository at ROOT still has the tree TREE.
+A baseline is a tree nothing names (`ecc-review-snapshot'), which
+`git gc' deletes once it is older than `gc.pruneExpire', two weeks by
+default."
+  (and root tree
+       (eq 0 (car (ecc-review--git root "cat-file" "-e" (concat tree "^{tree}"))))))
+
+(defun ecc-review-restore-baseline (session tree)
+  "Give SESSION back TREE, the baseline it had in the Emacs it was saved from.
+`ecc-restore' calls this for each session it brings back, so that the
+review of what the session changed still starts where the session
+started rather than when it was restored.  Return TREE when the
+repository of SESSION still has it, and nil, leaving the baseline of
+SESSION as it was, when it has not: then `ecc-review-ensure-baseline'
+takes a new one when the CLI next starts, as for a session nothing
+saved."
+  (when-let* ((root (ecc-review-git-root (or (ecc-session-project-root session)
+                                             default-directory)))
+              ((ecc-review-tree-exists-p root tree)))
+    (setf (ecc-session-baseline session) tree)))
 
 ;;;; A diff made from what the session recorded
 
@@ -1074,6 +1098,27 @@ here when it is wanted.")
   "Run in a diff review after its view was moved without a command.
 What Claude moves over MCP, and what the files pane moves, is no
 command of the review's own, so `post-command-hook\=' does not hear it.")
+
+(defvar ecc-review-closing-functions nil
+  "Functions called with a review buffer that is about to close.
+A diff review as it is killed, by \\[ecc-review-quit] or any other way,
+and the control buffer of an ediff review as it is quit
+\(`ecc-review-ediff-quit'), while all of it is still there: its
+comments, its reading and its windows.  The
+review of a proposal comes here too, and `ecc-review-buffer-p' tells it
+apart.  `ecc-review-resume.el' saves the review here, unless it is
+being dropped (`ecc-review-dropping-functions').")
+
+(defvar ecc-review-dropping-functions nil
+  "Functions called with a review of files \\[ecc-review-quit] is dropping.
+Before it closes, and once the user said yes to losing the comments of
+theirs not sent yet.  `ecc-review-resume.el' forgets the review it saved
+here, and saves nothing of it from then on.")
+
+(defun ecc-review--closing ()
+  "Tell `ecc-review-closing-functions' that this review is closing.
+On the `kill-buffer-hook' of a diff review."
+  (run-hook-with-args 'ecc-review-closing-functions (current-buffer)))
 
 (defvar-local ecc-review--comments nil
   "Overlays drawing the comments, one per place that carries any.")
@@ -1460,7 +1505,10 @@ Claude
 
 C-c C-c sends the comments not sent yet and keeps the review open: the
 sent ones stay, dimmed, for Claude's replies, and the next C-c C-c sends
-only those made since.  q buries the review and C-c C-k drops it.
+only those made since.  q buries the review and C-c C-k drops it,
+asking first when it has comments of yours not sent yet.  A review
+killed, or open when Emacs exits, keeps them: R in the review menu takes
+it up again.
 
 ] and [ go through the commits of a pull request opened with p in the
 review menu, and C-c C-a sends the comments of all of them not sent yet
@@ -1522,6 +1570,7 @@ denies the proposal."
                                           (list ecc-review-mode-map diff-mode-shared-map)))
                                   minor-mode-overriding-map-alist)))
   (setq header-line-format '(:eval (ecc-review--header-line)))
+  (add-hook 'kill-buffer-hook #'ecc-review--closing nil t)
   (ecc-review--watch-files))
 
 (defun ecc-review-buffer-name (session &optional request range label)
@@ -3023,7 +3072,9 @@ gone from the diff altogether."
                        (and (ecc-review-note-outdated note)
                             (format "[outdated, was %s] "
                                     (ecc-review-note-lines note)))
-                       (and (ecc-review-note-reply-to note)
+                       ;; Not when what it answers is not in the review:
+                       ;; a reply resumed whose comment was sent before.
+                       (and (ecc-review--parent note)
                             (not (ecc-review--drawn-under note))
                             (format "[reply to #%d] " (ecc-review-note-reply-to note))))))
     (concat
@@ -4302,7 +4353,30 @@ review to those files."
 (define-obsolete-function-alias 'ecc-review-worktree #'ecc-review-range "0.4.0")
 
 (defun ecc-review-quit ()
-  "Close the review buffer, dropping its comments."
+  "Drop this review: close it, and its comments not sent yet with it.
+When it has comments of yours not sent yet, it asks first, and no
+leaves the review open.  What \\[ecc-review-resume] kept of the review is
+dropped too (`ecc-review-dropping-functions').  Every other way of
+closing a review -- \\[ecc-review-close], killing its buffer, Emacs
+exiting -- keeps those comments for \\[ecc-review-resume].  The review
+of a proposal is dropped without a question, as it always was: nothing
+is kept of it."
+  (interactive)
+  (let* ((review (current-buffer))
+         (files (ecc-review-buffer-p review))
+         (unsent (if files (length (ecc-review--unsent-notes)) 0)))
+    (if (and (> unsent 0)
+             (not (yes-or-no-p (format "Drop this review and %s not sent yet? "
+                                       (ecc-review--count unsent "comment")))))
+        (message "The review is kept")
+      (when files
+        (run-hook-with-args 'ecc-review-dropping-functions review))
+      (ecc-review--close review))))
+
+(defun ecc-review-close ()
+  "Close this review, keeping its comments not sent yet.
+\\[ecc-review-resume] brings it back with them; \\[ecc-review-quit]
+drops it instead."
   (interactive)
   (ecc-review--close (current-buffer)))
 

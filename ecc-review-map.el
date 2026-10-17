@@ -158,6 +158,32 @@ a line put in from context at its number in another patch of the file."
                              (puthash key t keys))
                            keys))))))
 
+(defun ecc-review-map-shape-data (shape)
+  "Return SHAPE as a plist that `prin1' writes and `read' gives back.
+The record a shape is would read back too, but as the slots it had when
+it was printed: a shape written by an older ecc would put each slot in
+the place of another.  PUT-IN is left out, being made again when asked
+for (`ecc-review-map-changed-p')."
+  (list :base (ecc-review-map-shape-base shape)
+        :removed (ecc-review-map-shape-removed shape)
+        :added (ecc-review-map-shape-added shape)
+        :added-at (ecc-review-map-shape-added-at shape)
+        :hunks (ecc-review-map-shape-hunks shape)
+        :order (ecc-review-map-shape-order shape)
+        :texts (ecc-review-map-shape-texts shape)
+        :gone (ecc-review-map-shape-gone shape)))
+
+(defun ecc-review-map-shape-from-data (data)
+  "Return the shape DATA, a plist of `ecc-review-map-shape-data', stands for."
+  (ecc-review-map--make-shape :base (plist-get data :base)
+                              :removed (plist-get data :removed)
+                              :added (plist-get data :added)
+                              :added-at (plist-get data :added-at)
+                              :hunks (plist-get data :hunks)
+                              :order (plist-get data :order)
+                              :texts (plist-get data :texts)
+                              :gone (plist-get data :gone)))
+
 (defun ecc-review-map-same-base-p (from to)
   "Return non-nil when the shapes FROM and TO were read against one old side.
 Two that do not say which are not known to be: a diff made from what a

@@ -15,6 +15,59 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Added
+
+- `M-x ecc-review-resume`, `R` in the review menu (`C-c c D R`), takes up
+  a review where it was left: one closed with `q` in ediff, killed, or
+  open when Emacs exited. It asks which, one line per review such as
+  `api · since the session started · src/app.py:42 · 2 unsent comments ·
+  2026-10-17 14:03`, and opens it again the way it was opened: the same
+  session, what it compared (what the session changed, a range, the
+  staged or unstaged changes) and the files it was kept to, in diff or in
+  ediff. The comments not sent yet come back on their lines, Claude's
+  with them, carried from the reading they were saved on as a refresh
+  carries them, so a comment whose line changed since comes back
+  outdated; point goes to the line that was being read, or to the
+  nearest one that stayed, and the filter of `/` is put back. Sent
+  comments are not saved: the conversation has them. A reply of Claude's
+  to one of them comes back on its own, without a `[reply to #N]` that
+  names a comment the review no longer holds.
+
+  The last review of each session and scope -- what it compares and the
+  files it was kept to -- is saved to `ecc-review-resume-file`
+  (`ecc-reviews.eld` under `user-emacs-directory`, Lisp data of layout 1,
+  keyed by session and scope) as it closes, as Emacs exits, and a second
+  after its comments last changed, so a crash loses only that second. A
+  session's review of what it changed and its review of `main...HEAD`
+  are kept apart. A save that fails says so and the log has why; the
+  review closes all the same. A review opened the ordinary way does not
+  replace a saved one of its scope with comments not sent until it has
+  comments of its own; a review resumed is the saved one and keeps it up
+  to date. Nothing is asked or reopened when a review is opened the
+  ordinary way. A saved review is dropped two weeks after it was saved,
+  or when its project directory is gone.
+
+  `C-c C-k` still drops the review, and now drops what was saved of it
+  too, so it is no longer offered under `R`; when it has comments of
+  yours not sent yet it asks first, and no leaves the review open and
+  saved. Nothing of a review dropped is saved after it, by a save waiting
+  for an idle moment or at exit. `q` in an ediff review is
+  `ecc-review-close`, which closes it and keeps the comments for `R`;
+  `q` in a diff review still buries it.
+
+  The session has to be in this Emacs, stopped or not: `ecc-restore`
+  brings back the sessions of the last one, and its CLI starts when the
+  comments are sent. A session that is not is refused and named rather
+  than guessed at. A review of that session and scope that is open
+  already is gone to; one of the same comparison kept to other files is
+  refused, being the buffer the review would open in. A review of what
+  the session changed since it started is saved with the id of its
+  baseline, the git tree it compares with; no ref is made, so `git gc`
+  deletes the tree two weeks on, and a review whose tree is gone is
+  refused, saying so, rather than opened against a new baseline. A review
+  that is part of a pull request read a commit at a time is not saved
+  yet.
+
 ### Changed
 
 - The `declare-function` forms pass `check-declare` on Emacs 29.1 and in an
@@ -28,6 +81,18 @@ Verified against **Claude Code CLI 2.1.290**.
   0.4.4 gave it is newer than 29.1. Nothing changes when the package runs.
 
 ### Fixed
+
+- A session `ecc-restore` brings back is reviewed from where it started
+  again. 0.4.0 saved each session without the baseline its review
+  compares with, so `ecc-review` of a restored session fell back to
+  `HEAD`, and once a prompt started its CLI took a new baseline there and
+  then: everything the session had done before Emacs went down dropped
+  out of its own review, commits and uncommitted work alike. The id of
+  the baseline is saved in `ecc-restore-file` now, and the session gets
+  it back when git still has the tree; the restore asks git once per
+  session that saved one. A tree `git gc` has deleted is named in the
+  message of `ecc-restore`, and that session takes a new baseline at its
+  next prompt, as before.
 
 - A Bash call that comes up open on the files it changed shows its
   `description:` and the diff, and no longer its `command:` or its `→`

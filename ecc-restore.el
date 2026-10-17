@@ -59,6 +59,10 @@
 ;; process: N sessions are not N CLIs at startup, and whether another
 ;; process is running one of them is asked when the user goes to use
 ;; it, one at a time, by the resume every stopped session already has.
+;; It comes back with the baseline its review compares with, saved as
+;; the id of a git tree: the session started when it started, not when
+;; it was restored, and git is asked once per session whether it still
+;; has that tree.
 
 ;;; Code:
 
@@ -72,6 +76,7 @@
 (require 'ecc-lifecycle)
 
 (declare-function ecc-session-ensure-buffer "ecc-session" (session))
+(declare-function ecc-review-restore-baseline "ecc-review" (session tree))
 (declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
 (declare-function ecc-space-of-root "ecc-space" (root))
@@ -126,14 +131,18 @@ probe, not an inline question, not one open in a terminal."
   "Return the entry SESSION is saved as.
 A name the CLI has not been told yet is marked `:rename-pending\=', one
 that is on its way included: the next Emacs tells the CLI once the
-session runs (`ecc-proc-send-rename\=')."
+session runs (`ecc-proc-send-rename\=').  `:baseline' is the id of the
+git tree its review compares with (`ecc-review-ensure-baseline'), which
+the session holds: saving it asks git nothing."
   (append (list :id (ecc-session-id session)
                 :name (ecc-session-name session)
                 :root (ecc-session-project-root session)
                 :cwd (ecc-session-cwd session))
           (and (or (ecc-session-rename-pending session)
                    (ecc-session-rename-sent session))
-               (list :rename-pending t))))
+               (list :rename-pending t))
+          (when-let* ((baseline (ecc-session-baseline session)))
+            (list :baseline baseline))))
 
 (defun ecc-restore--space-roots ()
   "Return the roots of the Spaces with a tab, the selected frame first.
@@ -321,8 +330,10 @@ back walks the state through the turns it replays."
 
 (defun ecc-restore--session (entry)
   "Bring back the session ENTRY describes, stopped, and return it.
-Nil when it cannot come back; the reason is the second value of the
-cons returned instead: (nil . REASON)."
+The answer is (SESSION . nil), or (SESSION . baseline-gone) when the
+baseline of its review was saved and git no longer has it
+\(`ecc-restore--baseline').  Nil when it cannot come back; the reason is
+the second value of the cons returned instead: (nil . REASON)."
   (let* ((id (plist-get entry :id))
          (root (plist-get entry :root))
          (file (and id (ecc-history-file id))))
@@ -355,7 +366,21 @@ cons returned instead: (nil . REASON)."
         (require 'ecc-session)
         (ecc-session-ensure-buffer session)
         (ecc-history-load session)
-        (cons session nil))))))
+        (cons session (ecc-restore--baseline session entry)))))))
+
+(defun ecc-restore--baseline (session entry)
+  "Give SESSION the review baseline ENTRY saved, when git still has it.
+Without it the review of what SESSION changed would start at the next
+prompt, and show nothing of what it did before Emacs went down: the
+baseline of a session is the moment it started, not the moment it was
+restored.  One git command per session that saved a baseline.  Return
+`baseline-gone' when ENTRY saved one that is gone -- `git gc' deletes a
+tree nothing names after two weeks -- and nil otherwise."
+  (when-let* ((tree (plist-get entry :baseline))
+              ((not (ecc-session-baseline session))))
+    (require 'ecc-review)
+    (unless (ecc-review-restore-baseline session tree)
+      'baseline-gone)))
 
 (defun ecc-restore--adopt (session entry)
   "Make SESSION, a recording open to be read, the restored session of ENTRY.
@@ -363,7 +388,8 @@ The recording is the same conversation: skipping the entry because it
 is being read would leave it out of every save after this one, since a
 recording being read is never saved.  So it becomes what a restored
 session is -- the user's own, stopped, under its saved name and root --
-in the buffer it already has.  Returns (SESSION . nil).
+in the buffer it already has.  Returns (SESSION . nil), or
+\(SESSION . baseline-gone) as `ecc-restore--session' does.
 
 The saved name is put back in Emacs alone.  It differs from the one
 the recording gave the session whenever the CLI never had it -- the
@@ -386,7 +412,7 @@ saved as `:rename-pending\=' is one the CLI is still to be told."
       (setq default-directory (plist-get entry :root))))
   (require 'ecc-render)
   (ecc-render-refresh session)
-  (cons session nil))
+  (cons session (ecc-restore--baseline session entry)))
 
 (defun ecc-restore--spaces (roots)
   "Open a Space for each of ROOTS, in order, starting nothing.
@@ -431,6 +457,7 @@ every time Emacs starts, call it from the init file."
          (restored nil)
          (open 0)
          (skipped nil)
+         (no-baseline nil)
          (spaces nil))
     (unless state
       (user-error "Nothing to restore in %s"
@@ -438,7 +465,10 @@ every time Emacs starts, call it from the init file."
     ;; Oldest first, so that the one used last is the most recent again.
     (dolist (entry (reverse (plist-get state :sessions)))
       (pcase-let ((`(,session . ,reason) (ecc-restore--session entry)))
-        (cond (session (push session restored))
+        (cond (session
+               (push session restored)
+               (when (eq reason 'baseline-gone)
+                 (push (ecc-session-name session) no-baseline)))
               ((eq reason 'open) (cl-incf open))
               ((stringp reason)
                (push (format "%s (%s)" (or (plist-get entry :name) "?") reason)
@@ -456,7 +486,7 @@ every time Emacs starts, call it from the init file."
       (setq ecc-restore--previous nil
             ecc-restore--owned t))
     (ecc-restore--schedule)
-    (message "Restored %d session%s%s%s%s"
+    (message "Restored %d session%s%s%s%s%s"
              (length restored) (if (= 1 (length restored)) "" "s")
              (if spaces
                  (format " in %d Space%s" (length spaces)
@@ -465,6 +495,10 @@ every time Emacs starts, call it from the init file."
              (if (> open 0) (format "; %d open already" open) "")
              (if skipped
                  (format "; skipped %s" (string-join (nreverse skipped) ", "))
+               "")
+             (if no-baseline
+                 (format "; git no longer has the tree the review of %s started from, so it starts again at the next prompt"
+                         (string-join (nreverse no-baseline) ", "))
                ""))
     restored))
 
