@@ -65,6 +65,16 @@ Verified against **Claude Code CLI 2.1.290**.
   same git commands run, with the same ten-second cache. A git that cannot
   be started at all is logged in `*ecc-log: git*`, where it used to be
   `*ecc-log: review*` or `*ecc-log: worktree*`.
+- The review's keys on a request waiting for an answer, `c` to comment on
+  the proposal and `e` to edit it, are bound in a keymap of
+  `ecc-review.el`, `ecc-review-request-section-map`, which the review
+  hangs under `ecc-request-section-map` as the other modules above the
+  chat hang theirs, rather than in that map itself. `ecc-chat.el` no
+  longer requires `ecc-review`, and with it `ecc-lifecycle` and
+  `ecc-history`: loading the chat mode loads 17 modules where it loaded
+  25. The keys are unchanged, since every session buffer is made with the
+  whole package loaded, and a `c` or `e` a user binds in
+  `ecc-request-section-map` still wins over the review's.
 
 ### Fixed
 

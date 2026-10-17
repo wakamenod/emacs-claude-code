@@ -180,7 +180,8 @@ still resolve to the modules' commands."
                        (define-key ecc-chat-mode-map (kbd "C-c C-c") #'ignore)
                        (define-key ecc-chat-mode-map (kbd "C-c ?") #'ignore)
                        (define-key ecc-chat-transcript-map (kbd "g") #'ignore)
-                       (define-key ecc-chat-transcript-map (kbd "?") #'ignore))
+                       (define-key ecc-chat-transcript-map (kbd "?") #'ignore)
+                       (define-key ecc-request-section-map (kbd "c") #'ignore))
                      (require 'ecc)
                      (mapcar (lambda (entry)
                                (lookup-key (symbol-value (car entry))
@@ -190,14 +191,35 @@ still resolve to the modules' commands."
                                (ecc-chat-mode-map . "C-c ?")
                                (ecc-chat-transcript-map . "g")
                                (ecc-chat-transcript-map . "?")
+                               (ecc-request-section-map . "c")
                                (ecc-chat-mode-map . "C-c C-x")
                                (ecc-chat-mode-map . "C-c C-z")
                                (ecc-chat-transcript-map . "RET")
                                (ecc-chat-mode-map . "C-c C-q")
-                               (ecc-chat-transcript-map . "t")))))
-                 (list #'ignore #'ignore #'ignore #'ignore #'ignore
+                               (ecc-chat-transcript-map . "t")
+                               (ecc-request-section-map . "e")))))
+                 (list #'ignore #'ignore #'ignore #'ignore #'ignore #'ignore
                        #'ecc-prompt-toggle-context #'ecc-session-interrupt
-                       #'ecc-session-visit #'ecc-queue-show #'ecc-tui-open))))
+                       #'ecc-session-visit #'ecc-queue-show #'ecc-tui-open
+                       #'ecc-review-edit-proposal))))
+
+(ert-deftest ecc-load-test-request-keys-come-with-the-review ()
+  "The comment and the edit on a request are the review's, not the chat's.
+`ecc-chat' defines `ecc-request-section-map' and binds no command of a
+module above it there, so with `ecc-chat' alone \\`c' and \\`e' are
+not the review's; `ecc-review' hangs its keymap under the map, and with
+the package loaded they are."
+  (should (equal (ecc-load-test--run
+                  '(let ((keys (lambda ()
+                                 (list (lookup-key ecc-request-section-map (kbd "c"))
+                                       (lookup-key ecc-request-section-map (kbd "e"))))))
+                     (require 'ecc-chat)
+                     (list (featurep 'ecc-review)
+                           (funcall keys)
+                           (progn (require 'ecc) (funcall keys)))))
+                 (list nil (list nil nil)
+                       (list #'ecc-review-comment-request
+                             #'ecc-review-edit-proposal)))))
 
 (ert-deftest ecc-load-test-reloading-a-module-keeps-the-keymaps ()
   "Loading a module that binds chat keys again leaves the keymaps as they were.
@@ -212,7 +234,7 @@ it there and does not nest it again."
                                       (copy-tree (symbol-value map)))
                                     maps)))
                 (dolist (file '("ecc-prompt" "ecc-session" "ecc-queue"
-                                "ecc-hint" "ecc-tui" "ecc-transient"))
+                                "ecc-hint" "ecc-tui" "ecc-transient" "ecc-review"))
                   (load file nil t))
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))

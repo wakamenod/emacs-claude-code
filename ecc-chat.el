@@ -47,8 +47,9 @@
 ;; its commands in a keymap of its own and makes it a parent of them
 ;; (`ecc-chat-add-keymap-parent'): `ecc-prompt' the sending, the
 ;; history, the slash and what RET does in the region, `ecc-session'
-;; what opens, refreshes or resumes from the transcript, and the queue,
-;; the hint, the terminal and the menu a key or two each.  They all
+;; what opens, refreshes or resumes from the transcript, `ecc-review'
+;; the comment and the edit on a request waiting for an answer, and the
+;; queue, the hint, the terminal and the menu a key or two each.  They all
 ;; build on this file, so the dependency runs one way, and
 ;; `ecc-chat-mode' loads them before the buffer is used.  A key bound in
 ;; the maps here, by a user after this file is loaded, wins over theirs
@@ -77,7 +78,6 @@
 (require 'ecc-render)
 (require 'ecc-window)
 (require 'ecc-perm)
-(require 'ecc-review)
 (require 'ecc-btw)
 
 (defvar show-paren-predicate)
@@ -278,8 +278,6 @@ A key not here falls through to `ecc-chat-mode-map'.")
     (define-key map (kbd "A") #'ecc-perm-allow-always)
     (define-key map (kbd "u") #'ecc-perm-approve-turn)
     (define-key map (kbd "r") #'ecc-perm-add-pattern)
-    (define-key map (kbd "c") #'ecc-review-comment-request)
-    (define-key map (kbd "e") #'ecc-review-edit-proposal)
     map)
   "Keymap of a node that is waiting for an answer.
 The keys of `ecc-chat-transcript-map\=' keep their meaning here, so that

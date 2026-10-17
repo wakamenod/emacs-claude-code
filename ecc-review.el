@@ -82,6 +82,7 @@
 (require 'ecc-render)
 (require 'ecc-perm)
 (require 'ecc-window)
+(require 'ecc-chat)
 (require 'ecc-lifecycle)
 
 (autoload 'ecc-review-files-toggle "ecc-review-files" nil t)
@@ -4422,6 +4423,17 @@ prompt queue so that the next message tells Claude what was applied."
   (interactive)
   (set-buffer-modified-p nil)
   (ecc-perm-close-buffer (current-buffer)))
+
+(defvar ecc-review-request-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "c") #'ecc-review-comment-request)
+    (define-key map (kbd "e") #'ecc-review-edit-proposal)
+    map)
+  "The keys of the review on a node that is waiting for an answer.
+A parent of `ecc-request-section-map', above the transcript's keys.")
+
+(ecc-chat-add-keymap-parent ecc-request-section-map
+                            ecc-review-request-section-map)
 
 (provide 'ecc-review)
 
