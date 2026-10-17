@@ -1106,7 +1106,14 @@ and the control buffer of an ediff review as it is quit
 \(`ecc-review-ediff-quit'), while all of it is still there: its
 comments, its reading and its windows.  The
 review of a proposal comes here too, and `ecc-review-buffer-p' tells it
-apart.  `ecc-review-resume.el' saves the review here.")
+apart.  `ecc-review-resume.el' saves the review here, unless it is
+being dropped (`ecc-review-dropping-functions').")
+
+(defvar ecc-review-dropping-functions nil
+  "Functions called with a review of files \\[ecc-review-quit] is dropping.
+Before it closes, and once the user said yes to losing the comments of
+theirs not sent yet.  `ecc-review-resume.el' forgets the review it saved
+here, and saves nothing of it from then on.")
 
 (defun ecc-review--closing ()
   "Tell `ecc-review-closing-functions' that this review is closing.
@@ -1489,7 +1496,7 @@ on, point and the window are left as they were and that is said."
   /         filter the files           a         show or hide Claude's
   g         read the diff again        C-c C-c   send the new comments
   q         bury the review            C-u C-c C-c  edit them, then send
-  ] / [     next, previous commit      C-c C-k   close the review
+  ] / [     next, previous commit      C-c C-k   drop the review
                                        C-c C-a   send every commit's
 Claude
   T         ask for a tour of the review
@@ -1498,8 +1505,10 @@ Claude
 
 C-c C-c sends the comments not sent yet and keeps the review open: the
 sent ones stay, dimmed, for Claude's replies, and the next C-c C-c sends
-only those made since.  q buries the review and C-c C-k closes it,
-keeping the comments not sent: R in the review menu takes it up again.
+only those made since.  q buries the review and C-c C-k drops it,
+asking first when it has comments of yours not sent yet.  A review
+killed, or open when Emacs exits, keeps them: R in the review menu takes
+it up again.
 
 ] and [ go through the commits of a pull request opened with p in the
 review menu, and C-c C-a sends the comments of all of them not sent yet
@@ -4342,9 +4351,30 @@ review to those files."
 (define-obsolete-function-alias 'ecc-review-worktree #'ecc-review-range "0.4.0")
 
 (defun ecc-review-quit ()
-  "Close the review buffer.
-The comments not sent yet go with it, kept to be brought back by
-\\[ecc-review-resume] along with the review and the place in it."
+  "Drop this review: close it, and its comments not sent yet with it.
+When it has comments of yours not sent yet, it asks first, and no
+leaves the review open.  What \\[ecc-review-resume] kept of the review is
+dropped too (`ecc-review-dropping-functions').  Every other way of
+closing a review -- \\[ecc-review-close], killing its buffer, Emacs
+exiting -- keeps those comments for \\[ecc-review-resume].  The review
+of a proposal is dropped without a question, as it always was: nothing
+is kept of it."
+  (interactive)
+  (let* ((review (current-buffer))
+         (files (ecc-review-buffer-p review))
+         (unsent (if files (length (ecc-review--unsent-notes)) 0)))
+    (if (and (> unsent 0)
+             (not (yes-or-no-p (format "Drop this review and %s not sent yet? "
+                                       (ecc-review--count unsent "comment")))))
+        (message "The review is kept")
+      (when files
+        (run-hook-with-args 'ecc-review-dropping-functions review))
+      (ecc-review--close review))))
+
+(defun ecc-review-close ()
+  "Close this review, keeping its comments not sent yet.
+\\[ecc-review-resume] brings it back with them; \\[ecc-review-quit]
+drops it instead."
   (interactive)
   (ecc-review--close (current-buffer)))
 

@@ -124,13 +124,13 @@ session changes both: y.txt is changed first in the review."
 (defun ecc-review-resume-test--diff-review (session)
   "Open the diff review of what SESSION changed, comment on x.txt and close it.
 The comment is on the line +2, point is left on +B and the review is
-closed with \\[ecc-review-quit]."
+closed with \\[ecc-review-close]."
   (let ((ecc-review-style 'diff))
     (with-current-buffer (ecc-review-buffer session)
       (ecc-review-resume-test--goto "+2")
       (ecc-review-comment "why 2")
       (ecc-review-resume-test--goto "+B")
-      (ecc-review-quit))))
+      (ecc-review-close))))
 
 ;;;; The file
 
@@ -211,7 +211,7 @@ closed with \\[ecc-review-quit]."
           (ecc-review-resume-test--goto "+B")
           (ecc-review-add-note 'claude "B is odd" (ecc-review--line-at-point))
           (ecc-review-comment "not yet")
-          (ecc-review-quit))
+          (ecc-review-close))
         (let ((entry (ecc-review-resume-test--entry session)))
           (should (equal (mapcar (lambda (note) (plist-get note :text))
                                  (plist-get entry :notes))
@@ -336,7 +336,7 @@ closed with \\[ecc-review-quit]."
                 (ecc-review-add-note 'user "why 2" two)
                 (ecc-review--draw-notes)
                 (ecc-review-move-to b nil))
-              (ecc-review-quit)))
+              (ecc-review-close)))
           (let ((entry (ecc-review-resume-test--entry session)))
             (should (eq (plist-get entry :style) 'ediff))
             (should (equal (ecc-review-resume--where entry) "y.txt:2"))
@@ -361,7 +361,7 @@ closed with \\[ecc-review-quit]."
                                                       (list (concat directory "y.txt")))
           (ecc-review-resume-test--goto "+B")
           (ecc-review-comment "on B")
-          (ecc-review-quit))
+          (ecc-review-close))
         (let ((entry (ecc-review-resume-test--entry session)))
           (should (equal (plist-get entry :range) "HEAD"))
           (should-not (plist-get entry :baseline))
@@ -398,7 +398,7 @@ closed with \\[ecc-review-quit]."
         ;; Opened again by hand, nothing written in it, closed.
         (with-current-buffer (ecc-review-buffer session)
           (should-not ecc-review--notes)
-          (ecc-review-quit))
+          (ecc-review-close))
         (should (equal (mapcar (lambda (note) (plist-get note :text))
                                (plist-get (ecc-review-resume-test--entry session) :notes))
                        '("why 2")))
@@ -406,7 +406,7 @@ closed with \\[ecc-review-quit]."
         (with-current-buffer (ecc-review-buffer session)
           (ecc-review-resume-test--goto "+B")
           (ecc-review-comment "a new one")
-          (ecc-review-quit))
+          (ecc-review-close))
         (should (equal (mapcar (lambda (note) (plist-get note :text))
                                (plist-get (ecc-review-resume-test--entry session) :notes))
                        '("a new one")))
@@ -415,7 +415,7 @@ closed with \\[ecc-review-quit]."
         (with-current-buffer (ecc-review-resume (ecc-review-resume-test--entry session))
           (dolist (note ecc-review--notes)
             (setf (ecc-review-note-sent note) t))
-          (ecc-review-quit))
+          (ecc-review-close))
         (should-not (plist-get (ecc-review-resume-test--entry session) :notes))))))
 
 (ert-deftest ecc-review-resume-test-comments-are-saved-once-idle ()
@@ -459,7 +459,7 @@ closed with \\[ecc-review-quit]."
                                                       (list (concat directory "y.txt")))
           (ecc-review-resume-test--goto "+B")
           (ecc-review-comment "on B, against HEAD")
-          (ecc-review-quit))
+          (ecc-review-close))
         (let ((entries (ecc-review-resume-entries)))
           (should (= 2 (length entries)))
           (should (equal (mapcar (lambda (entry) (plist-get entry :range)) entries)
@@ -487,7 +487,7 @@ closed with \\[ecc-review-quit]."
                                                         (list (concat directory file)))
             (ecc-review-resume-test--goto (if (equal file "x.txt") "+2" "+B"))
             (ecc-review-comment (concat "in " file))
-            (ecc-review-quit)))
+            (ecc-review-close)))
         (should (= 2 (length (ecc-review-resume-entries))))
         ;; The same files, given another way, are the same scope.
         (should (equal (ecc-review-resume--scope-key "s" "HEAD" '("b" "a") "/r/")
@@ -499,6 +499,143 @@ closed with \\[ecc-review-quit]."
           (should (equal (ecc-review-resume-test--texts
                           (get-buffer (ecc-review-buffer-name session nil "HEAD")))
                          '("in x.txt"))))))))
+
+;;;; Dropping
+
+(defmacro ecc-review-resume-test--answering (answer &rest body)
+  "Run BODY with `yes-or-no-p' answering ANSWER, and return what it asked.
+ANSWER `fail' fails the test when anything is asked."
+  (declare (indent 1))
+  `(let ((asked nil))
+     (cl-letf (((symbol-function 'yes-or-no-p)
+                (lambda (prompt)
+                  (when (eq ,answer 'fail) (ert-fail (format "asked: %s" prompt)))
+                  (push prompt asked)
+                  ,answer)))
+       ,@body)
+     asked))
+
+(ert-deftest ecc-review-resume-test-c-c-c-k-drops-the-saved-review ()
+  "C-c C-k asks when comments are not sent; no keeps everything, yes drops it for good."
+  (skip-unless (executable-find "git"))
+  (ecc-review-resume-test--with-world
+    (ecc-test-with-fake-session session
+      (ecc-review-resume-test--with-directory directory
+        (ecc-review-resume-test--repo session directory)
+        (ecc-review-resume-test--diff-review session)
+        (let ((review (ecc-review-resume (ecc-review-resume-test--entry session))))
+          (with-current-buffer review
+            (should (eq (key-binding (kbd "C-c C-k")) #'ecc-review-quit))
+            (let ((asked (ecc-review-resume-test--answering nil (ecc-review-quit))))
+              (should (string-search "1 comment not sent yet" (car asked)))))
+          (should (buffer-live-p review))
+          (should (ecc-review-resume-test--entry session))
+          ;; Another comment: a save waits for an idle moment.
+          (with-current-buffer review
+            (ecc-review-resume-test--goto "+B")
+            (ecc-review-comment "and B"))
+          (should (memq review ecc-review-resume--pending))
+          (with-current-buffer review
+            (should (ecc-review-resume-test--answering t (ecc-review-quit))))
+          (should-not (buffer-live-p review))
+          (should-not (ecc-review-resume-test--entry session))
+          (should-not (memq review ecc-review-resume--pending))
+          ;; Nothing that comes after brings it back.
+          (ecc-review-resume--save-pending)
+          (ecc-review-resume--save-at-exit)
+          (should-not (ecc-review-resume-test--entry session))
+          (should-not (ecc-review-resume-entries)))))))
+
+(ert-deftest ecc-review-resume-test-c-c-c-k-without-comments-asks-nothing ()
+  "A review with none of your comments not sent is dropped without a question."
+  (skip-unless (executable-find "git"))
+  (ecc-review-resume-test--with-world
+    (ecc-test-with-fake-session session
+      (ecc-review-resume-test--with-directory directory
+        (ecc-review-resume-test--repo session directory)
+        (let ((review (ecc-review-buffer session)))
+          (with-current-buffer review
+            (ecc-review-resume-test--goto "+2")
+            (ecc-review-comment "sent")
+            (setf (ecc-review-note-sent (car ecc-review--notes)) t)
+            (ecc-review-add-note 'claude "Claude's" (ecc-review--line-at-point))
+            (ecc-review--draw-notes))
+          (ecc-review-resume--save-pending)
+          (should (ecc-review-resume-test--entry session))
+          (with-current-buffer review
+            (ecc-review-resume-test--answering 'fail (ecc-review-quit)))
+          (should-not (buffer-live-p review))
+          (should-not (ecc-review-resume-test--entry session)))))))
+
+(ert-deftest ecc-review-resume-test-dropping-a-fresh-review-leaves-the-saved-one ()
+  "C-c C-k drops what this review saved, not a saved review it never replaced."
+  (skip-unless (executable-find "git"))
+  (ecc-review-resume-test--with-world
+    (ecc-test-with-fake-session session
+      (ecc-review-resume-test--with-directory directory
+        (ecc-review-resume-test--repo session directory)
+        (ecc-review-resume-test--diff-review session)
+        (let ((review (ecc-review-buffer session)))
+          (ecc-review-resume--save-pending)
+          (with-current-buffer review
+            (ecc-review-resume-test--answering 'fail (ecc-review-quit)))
+          (should (equal (mapcar (lambda (note) (plist-get note :text))
+                                 (plist-get (ecc-review-resume-test--entry session) :notes))
+                         '("why 2"))))))))
+
+(ert-deftest ecc-review-resume-test-other-endings-still-save ()
+  "Killing a diff review, and q in an ediff review, save as before."
+  (skip-unless (executable-find "git"))
+  (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+        (ecc-review-ediff-layout 'side-by-side)
+        (ecc-review-talk-reply-height nil))
+    (ecc-review-resume-test--with-world
+      (ecc-test-with-fake-session session
+        (ecc-review-resume-test--with-directory directory
+          (ecc-review-resume-test--repo session directory)
+          (let ((review (ecc-review-buffer session)))
+            (with-current-buffer review
+              (ecc-review-resume-test--goto "+2")
+              (ecc-review-comment "killed"))
+            (ecc-review-resume-test--answering 'fail (kill-buffer review)))
+          (should (equal (mapcar (lambda (note) (plist-get note :text))
+                                 (plist-get (ecc-review-resume-test--entry session) :notes))
+                         '("killed")))
+          (let ((control (ecc-review-ediff-range-buffer session "HEAD" directory)))
+            (with-current-buffer control
+              (ecc-review-add-note 'user "in ediff" (car (ecc-review-lines)))
+              (ecc-review--draw-notes)
+              (should (eq (key-binding (kbd "q")) #'ecc-review-close))
+              (ecc-review-resume-test--answering 'fail (ecc-review-close))))
+          (let ((entry (seq-find (lambda (entry) (equal (plist-get entry :range) "HEAD"))
+                                 (ecc-review-resume-entries))))
+            (should (eq (plist-get entry :style) 'ediff))
+            (should (equal (mapcar (lambda (note) (plist-get note :text))
+                                   (plist-get entry :notes))
+                           '("in ediff")))))))))
+
+(ert-deftest ecc-review-resume-test-c-c-c-k-drops-an-ediff-review ()
+  "C-c C-k in an ediff review asks, and drops what was saved of it."
+  (skip-unless (executable-find "git"))
+  (let ((ediff-window-setup-function #'ediff-setup-windows-plain)
+        (ecc-review-ediff-layout 'side-by-side)
+        (ecc-review-talk-reply-height nil)
+        (ecc-review-style 'ediff))
+    (ecc-review-resume-test--with-world
+      (ecc-test-with-fake-session session
+        (ecc-review-resume-test--with-directory directory
+          (ecc-review-resume-test--repo session directory)
+          (with-current-buffer (ecc-review session)
+            (ecc-review-add-note 'user "in ediff" (car (ecc-review-lines)))
+            (ecc-review--draw-notes)
+            (ecc-review-close))
+          (let ((control (ecc-review-resume (ecc-review-resume-test--entry session))))
+            (with-current-buffer control
+              (should (eq (key-binding (kbd "C-c C-k")) #'ecc-review-quit))
+              (should (ecc-review-resume-test--answering t (ecc-review-quit))))
+            (should-not (buffer-live-p control))
+            (ecc-review-resume--save-at-exit)
+            (should-not (ecc-review-resume-test--entry session))))))))
 
 ;;;; What refuses
 
@@ -567,7 +704,7 @@ closed with \\[ecc-review-quit]."
                   (with-current-buffer (ecc-review-buffer two)
                     (ecc-review-resume-test--goto "+B")
                     (ecc-review-comment "the other's")
-                    (ecc-review-quit))
+                    (ecc-review-close))
                   ;; Both kept, the one saved last first.
                   (let ((entries (ecc-review-resume-entries)))
                     (should (equal (mapcar (lambda (entry) (plist-get entry :name)) entries)

@@ -591,12 +591,12 @@ minibuffer the control frame of a graphical Emacs does not have."
                   (should (= (length (window-list nil 'no-minibuffer)) 2))
                   (setq control (ecc-review-ediff-buffer session))
                   (with-current-buffer control
-                    (should (eq (key-binding (kbd "q")) #'ecc-review-quit))
+                    (should (eq (key-binding (kbd "q")) #'ecc-review-close))
                     ;; A and B, and nothing else of what was there.
                     (should-not (get-buffer-window stranger))
                     (should (memq (window-buffer ediff-window-A)
                                   (list (car ecc-review-ediff--buffers))))
-                    (ecc-review-quit))
+                    (ecc-review-close))
                   (should (get-buffer-window stranger))
                   (kill-buffer stranger)))
             (ecc-review-ediff-test--quit control)))))))
@@ -1139,7 +1139,9 @@ the current buffer around it, as Emacs 31 does."
                     (ecc-review-ediff-comment "never mind")
                     (setq base (car ecc-review-ediff--buffers)
                           now (cdr ecc-review-ediff--buffers))
-                    (ecc-review-quit))
+                    ;; A comment not sent: C-c C-k asks first.
+                    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+                      (ecc-review-quit)))
                   (should-not (buffer-live-p control))
                   (should-not (buffer-live-p base))
                   (should-not (buffer-live-p now))

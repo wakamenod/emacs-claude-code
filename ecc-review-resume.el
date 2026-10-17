@@ -55,6 +55,11 @@
 ;; review resumed is the saved one carrying on (`ecc-review-resume--key'),
 ;; and keeps it up to date.
 ;;
+;; `ecc-review-quit', C-c C-k, drops a review and what was saved of it,
+;; asking first when it has comments not sent; nothing of it is saved
+;; after that, by the closing, by a save waiting for an idle moment or
+;; at exit.  Every other way a review ends saves it.
+;;
 ;; The review of what a session changed since it started compares the
 ;; working tree with its baseline, a git tree nothing names.  Its id is
 ;; saved and no ref is made, so `git gc' deletes the tree two weeks on;
@@ -109,6 +114,10 @@ Saving while somebody types would hold up the typing.")
   "Which saved review this review is, or nil before it is first saved.
 A review resumed takes the key of the one it was saved as.")
 
+(defvar-local ecc-review-resume--dropped nil
+  "Non-nil once \\[ecc-review-quit] is dropping this review.
+Nothing of it is saved from then on (`ecc-review-resume--saved-p').")
+
 (defvar ecc-review-resume--pending nil
   "The reviews whose comments were drawn since they were last saved.")
 
@@ -119,12 +128,14 @@ A review resumed takes the key of the one it was saved as.")
 
 (defun ecc-review-resume--saved-p (review)
   "Return non-nil when REVIEW is a review to save.
-A review of files, not of one proposal, and not one of a pull request
-read a commit at a time, whose comments its walk holds."
+A review of files, not of one proposal, not one of a pull request read
+a commit at a time, whose comments its walk holds, and not one being
+dropped."
   (and (buffer-live-p review)
        (with-current-buffer review
          (and (ecc-review-buffer-p)
-              (null ecc-review--walk)))))
+              (null ecc-review--walk)
+              (null ecc-review-resume--dropped)))))
 
 (defun ecc-review-resume--scope-key (session range paths directory)
   "Return what tells one saved review from another: (SESSION RANGE PATHS).
@@ -433,6 +444,29 @@ writes nothing (`ecc-review-resume--put')."
   (when (ecc-review-resume--saved-p review)
     (ecc-review-resume--save-safely review)))
 
+(defun ecc-review-resume--on-dropping (review)
+  "Forget what was saved of REVIEW, which \\[ecc-review-quit] is dropping.
+On `ecc-review-dropping-functions'.  The saved review that is REVIEW's
+own -- the one it saved, or was resumed from -- goes, and another of its
+scope it did not replace stays.  Nothing of REVIEW is saved from here
+on: not as it closes, not by an idle save waiting for it, not at exit.
+A file that cannot be written is said so, and the review is dropped
+all the same."
+  (with-current-buffer review
+    (setq ecc-review-resume--dropped t))
+  (setq ecc-review-resume--pending (delq review ecc-review-resume--pending))
+  (when-let* ((key (buffer-local-value 'ecc-review-resume--key review))
+              ((bound-and-true-p ecc-review-resume-enabled)))
+    (condition-case error
+        (let ((state (ecc-review-resume--read)))
+          (ecc-review-resume--write
+           state (seq-remove (lambda (entry) (equal (plist-get entry :key) key))
+                             (plist-get state :reviews))))
+      (error
+       (ecc-log "review" "dropping the saved %s failed: %S" (buffer-name review) error)
+       (message "ecc: the saved copy of %s was not dropped: %s"
+                (buffer-name review) (error-message-string error))))))
+
 (defun ecc-review-resume--save-at-exit ()
   "Save every review still open as Emacs exits.
 The one used last is saved last, and so is the one a session keeps when
@@ -444,6 +478,7 @@ it has two open."
 
 (add-hook 'ecc-review-after-draw-hook #'ecc-review-resume--on-draw)
 (add-hook 'ecc-review-closing-functions #'ecc-review-resume--on-closing)
+(add-hook 'ecc-review-dropping-functions #'ecc-review-resume--on-dropping)
 
 ;;;; Taking a review up again
 
@@ -648,7 +683,8 @@ Emacs exits; this asks which one, and opens it again as it was opened
 diff or in ediff -- with the comments not sent yet back on their lines
 and point where it was.  A comment whose line changed since is
 outdated, as after a refresh, and a place whose line went is the
-nearest line that stayed.
+nearest line that stayed.  \\[ecc-review-quit] in a review drops it,
+and what was saved of it, instead.
 
 ENTRY is a saved review, `ecc-review-resume-read' asks for it.  The
 session has to be in this Emacs, stopped or not: `ecc-restore' brings
