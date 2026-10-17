@@ -28,7 +28,7 @@
 
 ;; A review is a buffer, and its comments live in it: closing the review
 ;; half-way, or Emacs, lost whatever had been written and not sent.  This
-;; keeps the last review of each session in a file of its own,
+;; keeps the last review of each session and scope in a file of its own,
 ;; `ecc-review-resume-file', and `ecc-review-resume' opens it again: the
 ;; same session, what it compared and how it was shown, the comments not
 ;; sent yet and the place being read.  Nothing is asked or reopened when
@@ -47,11 +47,13 @@
 ;; Sent comments are not saved, the conversation having them; Claude's
 ;; are, as the review showed them.
 ;;
-;; One review is kept per session, the one saved last, with one rule
-;; against losing what was written: a review opened afresh does not
-;; replace a saved one that has comments not sent until it has some of
-;; its own (`ecc-review-resume--put').  A review resumed is the saved one
-;; carrying on (`ecc-review-resume--key'), and keeps it up to date.
+;; One review is kept per session and scope -- what it compares and the
+;; files it was kept to (`ecc-review-resume--scope-key') -- the one saved
+;; last, with one rule against losing what was written: a review opened
+;; afresh does not replace a saved one of its scope that has comments
+;; not sent until it has some of its own (`ecc-review-resume--put').  A
+;; review resumed is the saved one carrying on (`ecc-review-resume--key'),
+;; and keeps it up to date.
 ;;
 ;; The review of what a session changed since it started compares the
 ;; working tree with its baseline, a git tree nothing names.  Its id is
@@ -61,7 +63,7 @@
 ;; dropped at the next write.
 ;;
 ;; The layout of the file is versioned (`ecc-review-resume--version'):
-;; a plist whose `:reviews' are keyed by session id.  `:walks' is kept
+;; a plist whose `:reviews' are keyed by session and scope.  `:walks' is kept
 ;; for the pull requests read a commit at a time (`ecc-review-pr.el'),
 ;; one per (ROOT . NUMBER) with the comments it holds by range; this
 ;; version writes none, and does not save a review that is part of one.
@@ -81,7 +83,7 @@
 (declare-function ecc-review-files-set-filter "ecc-review-files" (review filter &optional note))
 
 (defvar ecc-review-resume-file (expand-file-name "ecc-reviews.eld" user-emacs-directory)
-  "File the last review of each session is saved in, as Lisp data.
+  "File the last review of each session and scope is saved in, as Lisp data.
 A variable rather than a setting, as `ecc-restore-file' is: where a
 package keeps its state is not a taste, and `user-emacs-directory' is
 where Emacs keeps the rest.")
@@ -123,6 +125,29 @@ read a commit at a time, whose comments its walk holds."
        (with-current-buffer review
          (and (ecc-review-buffer-p)
               (null ecc-review--walk)))))
+
+(defun ecc-review-resume--scope-key (session range paths directory)
+  "Return what tells one saved review from another: (SESSION RANGE PATHS).
+SESSION is the id of the session, RANGE what the review compares
+\(`ecc-review--range'), and PATHS the files it was kept to, made
+relative to DIRECTORY and sorted, so that the same files are one scope
+whatever order or form they were given in."
+  (list session range
+        (sort (mapcar (lambda (path)
+                        (file-relative-name (expand-file-name path directory) directory))
+                      paths)
+              #'string<)))
+
+(defun ecc-review-resume--entry-key (entry)
+  "Return the scope key of the saved review ENTRY."
+  (ecc-review-resume--scope-key (plist-get entry :session) (plist-get entry :range)
+                                (plist-get entry :paths) (plist-get entry :directory)))
+
+(defun ecc-review-resume--review-key (review)
+  "Return the scope key of the open review REVIEW."
+  (with-current-buffer review
+    (ecc-review-resume--scope-key (ecc-session-id ecc-review--session) ecc-review--range
+                                  ecc-review--paths default-directory)))
 
 (defun ecc-review-resume--plain (object)
   "Return OBJECT without text properties when it is a string."
@@ -264,14 +289,18 @@ none can be read now."
          (plist-put (copy-sequence b) :time nil)))
 
 (defun ecc-review-resume--put (entries entry)
-  "Return ENTRIES with ENTRY as the review saved for its session, first.
-A review opened afresh -- another key -- with none of your comments
-leaves a saved review that has some where it is: opening a review the
-ordinary way, before resuming the one with comments, would otherwise
-throw those comments away.  An entry that differs from the one saved
-in nothing but its time changes nothing."
-  (let* ((id (plist-get entry :session))
-         (old (seq-find (lambda (other) (equal (plist-get other :session) id)) entries)))
+  "Return ENTRIES with ENTRY as the review saved for its scope, first.
+The scope is the session and what the review compares
+\(`ecc-review-resume--scope-key'): the reviews of one session that
+compare other things are each kept.  A review opened afresh -- another
+key -- with none of your comments leaves a saved review of its scope
+that has some where it is: opening a review the ordinary way, before
+resuming the one with comments, would otherwise throw those comments
+away.  An entry that differs from the one saved in nothing but its time
+changes nothing."
+  (let* ((scope (ecc-review-resume--entry-key entry))
+         (old (seq-find (lambda (other) (equal (ecc-review-resume--entry-key other) scope))
+                        entries)))
     (cond ((and old (ecc-review-resume--same-p old entry)) entries)
           ((and old
                 (not (equal (plist-get old :key) (plist-get entry :key)))
@@ -327,7 +356,7 @@ middle leaves the old one.  Return non-nil when it wrote."
                        (print-circle nil)
                        (print-escape-newlines t))
                    (concat ";; -*- mode: lisp-data -*-\n"
-                           ";; The last review of each session; `ecc-review-resume' reads this.\n"
+                           ";; The last review of each session and scope; `ecc-review-resume' reads this.\n"
                            (prin1-to-string state) "\n")))
            (file (expand-file-name ecc-review-resume-file))
            (temp (concat file ".tmp"))
@@ -338,7 +367,7 @@ middle leaves the old one.  Return non-nil when it wrote."
       t)))
 
 (defun ecc-review-resume-save (review)
-  "Save REVIEW as the last review of its session.
+  "Save REVIEW as the last review of its session and scope.
 Return non-nil when the file was written.  Nothing is saved while
 `ecc-review-resume-enabled' is nil, nor for a review that is not one to
 save (`ecc-review-resume--saved-p')."
@@ -347,8 +376,9 @@ save (`ecc-review-resume--saved-p')."
     (setq ecc-review-resume--pending (delq review ecc-review-resume--pending))
     (let* ((state (ecc-review-resume--read))
            (entries (plist-get state :reviews))
-           (id (ecc-session-id (buffer-local-value 'ecc-review--session review)))
-           (previous (seq-find (lambda (entry) (equal (plist-get entry :session) id))
+           (scope (ecc-review-resume--review-key review))
+           (previous (seq-find (lambda (entry)
+                                 (equal (ecc-review-resume--entry-key entry) scope))
                                entries)))
       (ecc-review-resume--write
        state (ecc-review-resume--prune
@@ -431,14 +461,17 @@ says what is wrong with it.  The error goes to the log."
            t)))
 
 (defun ecc-review-resume--scope (entry)
-  "Return what the review ENTRY saved compared, in words."
+  "Return what the review ENTRY saved compared, in words.
+The files it was kept to are named, two at most, and counted beyond."
   (let ((range (plist-get entry :range))
         (paths (plist-get entry :paths)))
     (concat (if range
                 (ecc-review--range-name range (plist-get entry :label))
               "since the session started")
             (when paths
-              (format " (%s)" (ecc-review--count (length paths) "file"))))))
+              (format " (%s)" (if (<= (length paths) 2)
+                                  (string-join paths ", ")
+                                (ecc-review--count (length paths) "file")))))))
 
 (defun ecc-review-resume--where (entry)
   "Return the place the review ENTRY saved was read at, FILE:LINE, or nil."
@@ -468,16 +501,15 @@ and when it was saved; a session not in this Emacs says so."
      " · ")))
 
 (defun ecc-review-resume--choices (entries)
-  "Return ENTRIES as (LINE . ENTRY), each LINE told apart from the others."
+  "Return ENTRIES as (LINE . ENTRY), each LINE told apart from the others.
+Two that would read alike -- two sessions of one name, or one session's
+reviews of files the line only counts -- are numbered, <2> and on."
   (let ((seen (make-hash-table :test #'equal)))
     (mapcar (lambda (entry)
-              (let ((line (ecc-review-resume-describe entry)))
-                (when (gethash line seen)
-                  (setq line (format "%s · %s" line
-                                     (substring (plist-get entry :session) 0
-                                                (min 8 (length (plist-get entry :session)))))))
-                (puthash line t seen)
-                (cons line entry)))
+              (let* ((line (ecc-review-resume-describe entry))
+                     (count (1+ (gethash line seen 0))))
+                (puthash line count seen)
+                (cons (if (> count 1) (format "%s <%d>" line count) line) entry)))
             entries)))
 
 (defun ecc-review-resume-read ()
@@ -495,13 +527,23 @@ The one saved last is offered first."
                 choices))))
 
 (defun ecc-review-resume--open-review (session entry)
-  "Return the review of SESSION open now that compares what ENTRY did, or nil."
-  (seq-find (lambda (buffer)
-              (with-current-buffer buffer
-                (and (eq ecc-review--session session)
-                     (ecc-review-buffer-p)
-                     (equal ecc-review--range (plist-get entry :range)))))
-            (buffer-list)))
+  "Return the review of SESSION open now of the scope ENTRY saved, or nil.
+One that compares the same thing kept to other files is an error: it
+is the buffer the review would be opened in, and its comments would
+mix with the saved ones."
+  (let ((scope (ecc-review-resume--entry-key entry))
+        (other nil))
+    (or (seq-find (lambda (buffer)
+                    (with-current-buffer buffer
+                      (and (eq ecc-review--session session)
+                           (ecc-review-buffer-p)
+                           (equal ecc-review--range (plist-get entry :range))
+                           (or (equal (ecc-review-resume--review-key buffer) scope)
+                               (progn (setq other buffer) nil)))))
+                  (buffer-list))
+        (when other
+          (user-error "%s is open on other files; close it to resume this review"
+                      (buffer-name other))))))
 
 (defun ecc-review-resume--take-baseline (session entry)
   "Make the baseline the review ENTRY saved compared with SESSION's again.
@@ -600,21 +642,22 @@ line, or the nearest that stayed, or nil."
 ;;;###autoload
 (defun ecc-review-resume (entry)
   "Take up again a review that was closed, or open when Emacs exited.
-The last review of each session is saved as it closes and as Emacs
-exits; this asks which one, and opens it again as it was opened -- the
-same session, what it compared, in diff or in ediff -- with the comments
-not sent yet back on their lines and point where it was.  A comment
-whose line changed since is outdated, as after a refresh, and a place
-whose line went is the nearest line that stayed.
+The last review of each session and scope is saved as it closes and as
+Emacs exits; this asks which one, and opens it again as it was opened
+-- the same session, what it compared and the files it was kept to, in
+diff or in ediff -- with the comments not sent yet back on their lines
+and point where it was.  A comment whose line changed since is
+outdated, as after a refresh, and a place whose line went is the
+nearest line that stayed.
 
 ENTRY is a saved review, `ecc-review-resume-read' asks for it.  The
 session has to be in this Emacs, stopped or not: `ecc-restore' brings
 back the sessions of the last one, and the CLI starts when the comments
-are sent.  A review of that session comparing the same thing that is
-open already is gone to instead.  What a session changed since it
-started is compared with the baseline the review was read against,
-which git keeps for two weeks; once it is gone, the review cannot be
-resumed."
+are sent.  A review of that session comparing the same thing, kept to
+the same files, that is open already is gone to instead.  What a
+session changed since it started is compared with the baseline the
+review was read against, which git keeps for two weeks; once it is
+gone, the review cannot be resumed."
   (interactive (progn (ecc--require-package) (list (ecc-review-resume-read))))
   (let ((session (or (ecc-model-session (plist-get entry :session))
                      (user-error "%s is not open in this Emacs; bring it back with M-x ecc-restore or from the history (h), then resume its review"

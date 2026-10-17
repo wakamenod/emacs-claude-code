@@ -366,7 +366,7 @@ closed with \\[ecc-review-quit]."
           (should (equal (plist-get entry :range) "HEAD"))
           (should-not (plist-get entry :baseline))
           (should (equal (plist-get entry :paths) '("y.txt")))
-          (should (string-search "HEAD (1 file)" (ecc-review-resume-describe entry)))
+          (should (string-search "HEAD (y.txt)" (ecc-review-resume-describe entry)))
           (with-current-buffer (ecc-review-resume entry)
             (should (equal ecc-review--range "HEAD"))
             (should (equal ecc-review--paths '("y.txt")))
@@ -444,6 +444,61 @@ closed with \\[ecc-review-quit]."
           (should (equal (mapcar (lambda (note) (plist-get note :text))
                                  (plist-get (ecc-review-resume-test--entry session) :notes))
                          '("typed" "at exit"))))))))
+
+;;;; Scopes
+
+(ert-deftest ecc-review-resume-test-two-scopes-of-one-session-are-both-kept ()
+  "Two reviews of one session comparing different things keep their comments each."
+  (skip-unless (executable-find "git"))
+  (ecc-review-resume-test--with-world
+    (ecc-test-with-fake-session session
+      (ecc-review-resume-test--with-directory directory
+        (ecc-review-resume-test--repo session directory)
+        (ecc-review-resume-test--diff-review session)
+        (with-current-buffer (ecc-review-range-buffer session "HEAD" directory
+                                                      (list (concat directory "y.txt")))
+          (ecc-review-resume-test--goto "+B")
+          (ecc-review-comment "on B, against HEAD")
+          (ecc-review-quit))
+        (let ((entries (ecc-review-resume-entries)))
+          (should (= 2 (length entries)))
+          (should (equal (mapcar (lambda (entry) (plist-get entry :range)) entries)
+                         '("HEAD" nil)))
+          (should (= 2 (length (seq-uniq (mapcar #'car (ecc-review-resume--choices
+                                                       entries))))))
+          (should (string-search "HEAD (y.txt)" (ecc-review-resume-describe (car entries))))
+          (with-current-buffer (ecc-review-resume (cadr entries))
+            (should-not ecc-review--range)
+            (should (equal (ecc-review-resume-test--texts (current-buffer)) '("why 2"))))
+          (with-current-buffer (ecc-review-resume (car entries))
+            (should (equal ecc-review--range "HEAD"))
+            (should (equal (ecc-review-resume-test--texts (current-buffer))
+                           '("on B, against HEAD")))))))))
+
+(ert-deftest ecc-review-resume-test-the-files-are-part-of-the-scope ()
+  "The same range kept to other files is another review, and blocks the buffer."
+  (skip-unless (executable-find "git"))
+  (ecc-review-resume-test--with-world
+    (ecc-test-with-fake-session session
+      (ecc-review-resume-test--with-directory directory
+        (ecc-review-resume-test--repo session directory)
+        (dolist (file '("x.txt" "y.txt"))
+          (with-current-buffer (ecc-review-range-buffer session "HEAD" directory
+                                                        (list (concat directory file)))
+            (ecc-review-resume-test--goto (if (equal file "x.txt") "+2" "+B"))
+            (ecc-review-comment (concat "in " file))
+            (ecc-review-quit)))
+        (should (= 2 (length (ecc-review-resume-entries))))
+        ;; The same files, given another way, are the same scope.
+        (should (equal (ecc-review-resume--scope-key "s" "HEAD" '("b" "a") "/r/")
+                       (ecc-review-resume--scope-key "s" "HEAD" '("/r/a" "b") "/r/")))
+        (let ((y (car (ecc-review-resume-entries)))
+              (x (cadr (ecc-review-resume-entries))))
+          (ecc-review-resume x)
+          (should-error (ecc-review-resume y) :type 'user-error)
+          (should (equal (ecc-review-resume-test--texts
+                          (get-buffer (ecc-review-buffer-name session nil "HEAD")))
+                         '("in x.txt"))))))))
 
 ;;;; What refuses
 
