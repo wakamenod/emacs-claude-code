@@ -19,7 +19,7 @@ M-x customize-group RET ecc
 |---|---|---|
 | `ecc-executable` | `"claude"` | Claude Code の CLI。`PATH` 上の名前かパス |
 | `ecc-permission-mode` | `nil` | セッションを始めるときのモード（`--permission-mode`）: `"default"`、`"acceptEdits"`、`"plan"`、`"auto"`、`"bypassPermissions"`。`nil` なら CLI のデフォルトのまま |
-| `ecc-plan-default-mode` | `"acceptEdits"` | モードを選ばずにプランを承認したときに切り替えるモード。`nil` なら変更を求めず、CLI はデフォルトのモードに戻る |
+| `ecc-perm-plan-default-mode` | `"acceptEdits"` | モードを選ばずにプランを承認したときに切り替えるモード。`nil` なら変更を求めず、CLI はデフォルトのモードに戻る。旧名の `ecc-plan-default-mode` も引き続き使える |
 | `ecc-prompt-suggestions-enabled` | `nil` | 非 nil なら `--prompt-suggestions` を渡し、CLI が次のプロンプトを提案する |
 | `ecc-command-wrapper-function` | `nil` | `(command-list project-root)` を受け取り、代わりに実行するコマンドを返す関数 |
 | `ecc-disabled-plugins` | `nil` | ecc が始めるセッションで無効にするプラグイン（`"name@marketplace"`）。ターミナルのクライアントでは有効のまま |
