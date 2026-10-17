@@ -52,4 +52,4 @@ When Claude edits a file, the open review reads the files again: when a tool fin
 
 ## Finish
 
-When the difference says what you want, `q` or `C-c C-k` closes the ediff review with its comments and gives back the windows you had before. In the diff buffer the two differ: `q` buries the review and keeps its comments, and `C-c C-k` drops it and its comments. To start the next review clean, ask Claude to clear its comments.
+When the difference says what you want, `q` or `C-c C-k` closes the ediff review and gives back the windows you had before. In the diff buffer the two differ: `q` buries the review, and `C-c C-k` closes it. A closed review keeps the comments not sent, and [`R` in the review menu](/emacs-claude-code/features/review/#resuming-a-review) opens it again. To start the next review clean, ask Claude to clear its comments.

@@ -15,6 +15,45 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Added
+
+- `M-x ecc-review-resume`, `R` in the review menu (`C-c c D R`), takes up
+  a review where it was left: one closed with `C-c C-k`, killed, or open
+  when Emacs exited. It asks which, one line per session such as
+  `api · since the session started · src/app.py:42 · 2 unsent comments ·
+  2026-10-17 14:03`, and opens it again the way it was opened: the same
+  session, what it compared (what the session changed, a range, the
+  staged or unstaged changes, the files it was kept to), in diff or in
+  ediff. The comments not sent yet come back on their lines, Claude's
+  with them, carried from the reading they were saved on as a refresh
+  carries them, so a comment whose line changed since comes back
+  outdated; point goes to the line that was being read, or to the
+  nearest one that stayed, and the filter of `/` is put back. Sent
+  comments are not saved: the conversation has them.
+
+  The last review of each session is saved to `ecc-review-resume-file`
+  (`ecc-reviews.eld` under `user-emacs-directory`, versioned Lisp data
+  keyed by session id) as it closes, as Emacs exits, and a second after
+  its comments last changed, so a crash loses only that second. A save
+  that fails says so and the log has why; the review closes all the same.
+  A review opened the ordinary way does not replace a saved one with
+  comments not sent until it has comments of its own; a review resumed is
+  the saved one and keeps it up to date. Nothing is asked or reopened when
+  a review is opened the ordinary way. A saved review is dropped two weeks
+  after it was saved, or when its project directory is gone.
+
+  The session has to be in this Emacs, stopped or not: `ecc-restore`
+  brings back the sessions of the last one, and its CLI starts when the
+  comments are sent. A session that is not is refused and named rather
+  than guessed at. A review of that session comparing the same thing that
+  is open already is gone to. A review of what the session changed since
+  it started is saved with the id of its baseline, the git tree it
+  compares with; no ref is made, so `git gc` deletes the tree two weeks
+  on, and a review whose tree is gone is refused, saying so, rather than
+  opened against a new baseline. A review that is part of a pull request
+  read a commit at a time is not saved yet. `C-c C-k` and `?` say
+  "close the review" where they said "drop".
+
 ### Changed
 
 - The `declare-function` forms pass `check-declare` on Emacs 29.1 and in an
