@@ -93,10 +93,6 @@
 (autoload 'ecc-review-pr-next-commit "ecc-review-pr" nil t)
 (autoload 'ecc-review-pr-previous-commit "ecc-review-pr" nil t)
 (autoload 'ecc-review-pr-send-all "ecc-review-pr" nil t)
-(declare-function ecc-review-pr-walk-status "ecc-review-pr" (&optional subject))
-(declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
-(declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
-                  (session &optional range root paths))
 
 (defcustom ecc-review-style 'diff
   "How `ecc-review\=' and `ecc-review-range\=' show what changed.
@@ -1428,6 +1424,12 @@ not from who asked for it, so the review the menu opens and the one
                   (ecc-review--range-name range label)))
    (t (format "*ecc-review: %s*" (ecc-session-name session)))))
 
+(cl-defgeneric ecc-review-walk-status (_walk &optional _subject)
+  "Return what the review says of WALK, the larger review it is a part of.
+SUBJECT asks for the subject of the commit too.  `ecc-review-pr' has
+the method of a pull request, the one kind of walk there is."
+  nil)
+
 (defun ecc-review--header-line ()
   "Return the header line of the review buffer."
   (ecc--mode-line-escape
@@ -1445,7 +1447,7 @@ not from who asked for it, so the review the menu opens and the one
                'face 'ecc-heading-face)
    ;; Which commit of which pull request, and the comments of the others.
    (when ecc-review--walk
-     (concat "  ·  " (ecc-review-pr-walk-status)))
+     (concat "  ·  " (ecc-review-walk-status ecc-review--walk)))
    (when ecc-review--elsewhere
      (propertize (format "  ·  the right side is %s, not checked out here" ecc-review--elsewhere)
                  'face 'warning))
@@ -3737,15 +3739,16 @@ default, or any other range."
    (let ((session (ecc-review-session)))
      (list session (and current-prefix-arg (ecc-review-read-paths session)))))
   (let ((session (or session (ecc-review-session))))
-    (if (and (eq ecc-review-style 'ediff)
-             ;; Outside git there are no two trees to lay side by side:
-             ;; the review is built from what the session recorded, and
-             ;; what that gives is a diff.
-             (ecc-git-root (or (ecc-session-project-root session)
-                               default-directory)))
-        (progn (require 'ecc-review-ediff)
-               (ecc-review-ediff-buffer session paths))
-      (ecc-review--display (ecc-review-buffer session paths) session))))
+    ;; The style is a method of a module above this one, and a cold
+    ;; Emacs has loaded this file alone.
+    (ecc--require-package)
+    (ecc-review--open ecc-review-style session paths)))
+
+(cl-defgeneric ecc-review--open (_style session paths)
+  "Open the review of what SESSION changed, PATHS alone if given, in STYLE.
+STYLE is a value of `ecc-review-style'.  This is `diff', and
+`ecc-review-ediff' has the method of `ediff'."
+  (ecc-review--display (ecc-review-buffer session paths) session))
 
 (defun ecc-review--display (buffer session)
   "Show the review BUFFER of SESSION, which the user opened; return its window.
@@ -4181,11 +4184,16 @@ yet, or --staged for what is.  PATHS, asked for after it, restrict the
 review to those files."
   (interactive (ecc-review-range--read-arguments))
   (let ((session (or session (ecc-review-session))))
-    (pcase ecc-review-style
-      ('ediff (require 'ecc-review-ediff)
-              (ecc-review-ediff-range-buffer session range root paths))
-      (_ (ecc-review--display (ecc-review-range-buffer session range root paths)
-                              session)))))
+    ;; As in `ecc-review': the style is a method of a module above.
+    (ecc--require-package)
+    (ecc-review--open-range ecc-review-style session range root paths)))
+
+(cl-defgeneric ecc-review--open-range (_style session range root paths)
+  "Open the review of ROOT against RANGE for SESSION, PATHS alone, in STYLE.
+STYLE is a value of `ecc-review-style'.  This is `diff', and
+`ecc-review-ediff' has the method of `ediff'."
+  (ecc-review--display (ecc-review-range-buffer session range root paths)
+                       session))
 
 ;;;###autoload
 (define-obsolete-function-alias 'ecc-review-worktree #'ecc-review-range "0.4.0")

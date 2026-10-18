@@ -119,6 +119,27 @@ Verified against **Claude Code CLI 2.1.290**.
   wins, as in the other keymaps of `ecc-chat.el`. A click reads the
   session of the window it was made in, which need not be the selected
   window.
+- The review modules below `ecc-review-ediff.el` and `ecc-review-pr.el`
+  reach them through generic functions those two specialise, as the
+  layout of `ecc-window.el` reaches `ecc-space.el`, rather than by name.
+  `ecc-review` and `ecc-review-range` open `ecc-review-style` through
+  `ecc-review--open` and `ecc-review--open-range`, whose default is the
+  diff review and whose `ediff` methods are in `ecc-review-ediff.el`;
+  outside git the review of a session is still a diff. Both commands load the
+  whole package before they dispatch, since autoloaded from a cold Emacs
+  they have loaded `ecc-review.el` alone and the `ediff` style would have
+  opened a diff. The header line of a review asks its walk what to say
+  through `ecc-review-walk-status`, which `ecc-review-pr.el` answers for a
+  pull request. Going to the next commit of a pull request and redrawing
+  the count of its comments are `ecc-review-pr--replace` and
+  `ecc-review-pr--refresh-header`, whose ediff methods are in
+  `ecc-review-ediff.el`. `ecc-review-ediff-stacked-p`, which reads Emacs's
+  `ediff-split-window-function` alone, moves to `ecc-review-talk.el` as
+  `ecc-review-talk-stacked-p`, and the old name stays as an obsolete
+  alias. `ecc-review.el`, `ecc-review-pr.el` and `ecc-review-talk.el` no
+  longer declare a function of a module that requires them. Diff and
+  ediff reviews, the walk through a pull request's commits and the reply
+  pane behave as before.
 
 ### Fixed
 

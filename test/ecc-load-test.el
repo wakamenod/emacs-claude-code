@@ -672,6 +672,42 @@ one has loaded the package the others would have it too."
                          (delete-directory root t))))
                    (list (car case) t t)))))
 
+(ert-deftest ecc-load-test-review-cold-opens-the-style ()
+  "A review opened in an Emacs that has loaded nothing of ecc is in its style.
+`ecc-review' and `ecc-review-range' are autoloaded from `ecc-review',
+which loads nothing of `ecc-review-ediff', and the `ediff' style is a
+method of `ecc-review-ediff': without the package loaded first, the
+review would silently be a diff.  What would open is stood in for --
+an ediff wants a frame -- but the dispatch is the real one.  Each
+command runs in an Emacs of its own: once one has loaded the package
+the other would have it too."
+  (skip-unless (executable-find "git"))
+  (dolist (call '((ecc-review session)
+                  (ecc-review-range session "HEAD" root)))
+    (should (equal (ecc-load-test--run
+                    `(let ((root (file-name-as-directory
+                                  (make-temp-file "ecc-load-review" t))))
+                       (unwind-protect
+                           (let ((default-directory root))
+                             (call-process "git" nil nil nil "init" "-q")
+                             (load "ecc-autoloads" nil t)
+                             (require 'ecc-model)
+                             (setq ecc-review-style 'ediff)
+                             (dolist (name '(ecc-review-ediff-buffer
+                                             ecc-review-ediff-range-buffer))
+                               (advice-add name :override (lambda (&rest _) 'ediff)))
+                             (dolist (name '(ecc-review-buffer ecc-review-range-buffer))
+                               (advice-add name :override #'ignore))
+                             (advice-add 'ecc-review--display :override
+                                         (lambda (&rest _) 'diff))
+                             (let ((session (ecc-model-create-session
+                                             :name "cold" :project-root root)))
+                               (list (featurep 'ecc-review-ediff)
+                                     ,call
+                                     (featurep 'ecc-review-ediff))))
+                         (delete-directory root t))))
+                   '(nil ediff t)))))
+
 (provide 'ecc-load-test)
 
 ;;; ecc-load-test.el ends here

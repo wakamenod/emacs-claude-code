@@ -76,7 +76,6 @@
 (defvar ediff-window-A)
 (defvar ediff-buffer-B)
 (declare-function ediff-keep-window-config "ediff-wind" (control-buf))
-(declare-function ecc-review-ediff-stacked-p "ecc-review-ediff" (&optional control))
 
 (defcustom ecc-review-talk-reply-height 12
   "How many lines the reply pane under an ediff review takes, or nil for none.
@@ -532,6 +531,16 @@ The frame of its own goes too, when it shows this pane."
 
 ;;;;; Where it goes
 
+(defun ecc-review-talk-stacked-p (&optional control)
+  "Return non-nil when the review in CONTROL has one side above the other.
+CONTROL is the current buffer by default.  The split \\`|' toggles is
+what says so, not the setting the review opened with."
+  (eq (buffer-local-value 'ediff-split-window-function (or control (current-buffer)))
+      #'split-window-vertically))
+
+(define-obsolete-function-alias 'ecc-review-ediff-stacked-p
+  #'ecc-review-talk-stacked-p "0.5.0")
+
 (defun ecc-review-talk--side (review)
   "Return the side the reply pane of REVIEW goes on: `right' or `bottom'.
 On the right while the two sides of the review are one above the other
@@ -541,7 +550,7 @@ review counted, as wide as it is, while it is on the screen -- else at
 the bottom.  Run in the control buffer."
   (let ((frame (window-frame ediff-window-A))
         (files (ecc-review-files--pane-window review)))
-    (if (and (ecc-review-ediff-stacked-p review)
+    (if (and (ecc-review-talk-stacked-p review)
              (>= (- (window-total-width (frame-root-window frame))
                     ecc-review-talk-reply-width
                     (if files (window-total-width files) 0))

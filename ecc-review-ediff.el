@@ -549,13 +549,6 @@ The control panel is out of sight, but for the help \\`?' shows
                  (const :tag "Side by side, Claude at the bottom" side-by-side))
   :group 'ecc)
 
-(defun ecc-review-ediff-stacked-p (&optional control)
-  "Return non-nil when the review in CONTROL has one side above the other.
-CONTROL is the current buffer by default.  The split \\`|' toggles is
-what says so, not the setting the review opened with."
-  (eq (buffer-local-value 'ediff-split-window-function (or control (current-buffer)))
-      #'split-window-vertically))
-
 (defvar ecc-review-ediff-file-spacing 1
   "Blank lines put in front of each file but the first of an ediff review.
 The separator line alone runs the files together where one ends and the
@@ -3221,7 +3214,7 @@ of the right window (`ecc-review-direct--refresh-paths').  Run as the
 layout or the difference changes, from the hooks of the control
 buffer; nothing that would come out the same is set again."
   (with-current-buffer control
-    (let* ((stacked (ecc-review-ediff-stacked-p control))
+    (let* ((stacked (ecc-review-talk-stacked-p control))
            (fitted '(:eval (ecc-review-direct--header-line)))
            (keys (ecc-review-direct--key-pieces (unless stacked 'B))))
       (if stacked
@@ -3854,6 +3847,30 @@ session left to drive."
              (display-graphic-p frame))
     (select-frame-set-input-focus frame)))
 
+(defun ecc-review-ediff--open-in-walk (walk session range)
+  "Open the ediff review of RANGE, of the pull request WALK, for SESSION."
+  (ecc-review-pr-opening walk
+    (ecc-review-ediff-range-buffer session range (ecc-review-pr-walk-root walk))))
+
+(cl-defmethod ecc-review-pr--replace (walk session range from
+                                           &context (major-mode ediff-mode))
+  "Quit the ediff review FROM of WALK and open RANGE for SESSION in its place.
+An ediff review takes the frame, so the one left is quit, its comments
+held by WALK, and the next opened in its place; if that cannot be
+opened, the one quit comes back."
+  (let ((left ecc-review--range))
+    (ecc-review-pr--hold walk)
+    (ecc-review-ediff-quit from)
+    (condition-case err
+        (ecc-review-ediff--open-in-walk walk session range)
+      (error
+       (ecc-review-ediff--open-in-walk walk session left)
+       (signal (car err) (cdr err))))))
+
+(cl-defmethod ecc-review-pr--refresh-header (buffer &context (major-mode ediff-mode))
+  "Draw the headers and mode lines of the ediff review BUFFER again."
+  (ecc-review-direct-refresh-headers buffer))
+
 (defun ecc-review-ediff-quit (control)
   "Quit the ediff review in CONTROL, which closes it and its buffers.
 This is what `ecc-review--close-function\\=' is set to: a review that
@@ -4191,6 +4208,18 @@ opened."
                   ecc-review--elsewhere (plist-get content :elsewhere))
             (ecc-review-direct-refresh-headers control)))
         control))))
+
+(cl-defmethod ecc-review--open ((_style (eql ediff)) session paths)
+  "Open the review of what SESSION changed, PATHS alone if given, in ediff.
+Outside git there are no two trees to lay side by side: the review is
+built from what the session recorded, and what that gives is a diff."
+  (if (ecc-git-root (or (ecc-session-project-root session) default-directory))
+      (ecc-review-ediff-buffer session paths)
+    (cl-call-next-method)))
+
+(cl-defmethod ecc-review--open-range ((_style (eql ediff)) session range root paths)
+  "Open the review of ROOT against RANGE for SESSION, PATHS alone, in ediff."
+  (ecc-review-ediff-range-buffer session range root paths))
 
 (defun ecc-review-ediff-buffer (session &optional paths)
   "Open everything SESSION changed as one ediff and return the control buffer.
