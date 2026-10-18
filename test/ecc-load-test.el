@@ -6,9 +6,12 @@
 ;; every save, every window change, every killed buffer and every exit
 ;; ran ecc code in an Emacs that had never started a session.  Each now
 ;; goes on when what it serves first exists, and its own test says
-;; where.  This one says the rest: after loading, nothing of ecc is on a
-;; hook that is not ecc's own.  Wiring ecc to itself -- its functions
-;; on `ecc-request-added-hook' and the like -- is what loading is for.
+;; where.  The first says the rest: while ecc loads, it adds to and
+;; takes from no hook that is not ecc's own, and advises nothing, adds
+;; no function to a variable, watches no variable and starts no timer.
+;; Wiring ecc to itself -- its functions on `ecc-request-added-hook' and
+;; the like -- is what loading is for.  The tests after it load a small
+;; file that does each of those things, to show the probe catches it.
 ;;
 ;; The others are about the keymaps `ecc-chat' defines and the modules
 ;; above it give their keys to: whatever entry point is loaded, a chat
@@ -35,50 +38,333 @@
 ;;; Code:
 
 (require 'ert)
+(require 'bytecomp)
 (require 'cl-lib)
 (require 'seq)
 (require 'ecc-test-helpers)
 
+;; The NS port's input-method functions, which `ecc-chat' advises so the
+;; placeholder makes way for working text.  Batch has no NS port, so the
+;; tests below define stand-ins under the same names and provide
+;; `ns-win', as the NS port has done by the time ecc loads.
+(defconst ecc-load-test--ns-stand-ins
+  '(progn
+     (dolist (function '(ns-insert-working-text
+                         ns-insert-marked-text
+                         ns-delete-working-text))
+       (defalias function #'ignore))
+     (provide 'ns-win))
+  "The form that makes this Emacs look like the NS port to `ecc-chat'.")
+
+;; What loading does to Emacs is seen by watching it happen: every call
+;; that hangs a function on something, or leaves one to run later, is
+;; recorded while a file of ecc is being loaded, along with who made it.
+;; Looking at the variables afterwards, as this used to, sees only those
+;; whose names look like hooks, only the functions that are symbols, and
+;; no advice at all.
+(defconst ecc-load-test--recorder
+  '(progn
+     (defvar ecc-load-test--calls nil
+       "The calls recorded so far, the last first.")
+     (defvar ecc-load-test--depth 0
+       "How many recorded functions are running.
+A recorded function another one calls on its way, as `advice-add' calls
+`advice--add-function', is that one's doing and is not recorded again.")
+     (defvar ecc-load-test--deferred nil
+       "The features ecc has left code to run for, once each is loaded.")
+     (defvar ecc-load-test--after-load nil
+       "While code ecc left for a feature runs, the file of that feature.")
+     (defun ecc-load-test--ecc-name-p (object)
+       (and (symbolp object) (string-prefix-p "ecc-" (symbol-name object))))
+     (defun ecc-load-test--recording-p ()
+       "Non-nil while ecc's own code is loading: a file of ecc, or a body it left."
+       (or (and load-file-name
+                (string-match-p "\\`ecc.*\\.elc?\\'"
+                                (file-name-nondirectory load-file-name)))
+           (and ecc-load-test--after-load
+                (equal (car ecc-load-test--after-load) load-file-name))))
+     (defun ecc-load-test--caller (base)
+       "Return who called BASE: a function, :anonymous or :top-level.
+The frames between are seen through when they are the evaluator's own
+-- a special form, `funcall', `byte-code' and the rest written in C --
+or a macro.  Reaching the frame that loads the file is :top-level, a
+form of the file itself; a closure is :anonymous, since a closure does
+not say where it was written."
+       (catch 'caller
+         (let ((base-frame t))
+           (mapbacktrace
+            (lambda (_evald function _args _flags)
+              (cond (base-frame (setq base-frame nil))
+                    ((memq function '(load require load-with-code-conversion
+                                           eval-buffer eval-region))
+                     (throw 'caller :top-level))
+                    ((not (symbolp function)) (throw 'caller :anonymous))
+                    ((ecc-load-test--ecc-name-p function)
+                     (throw 'caller function))
+                    ((and (fboundp function)
+                          (or (macrop function)
+                              (subr-primitive-p (indirect-function function)))))
+                    (t (throw 'caller function))))
+            base))
+         :top-level))
+     (defun ecc-load-test--describe (object)
+       (if (symbolp object) object (format "%S" object)))
+     (defun ecc-load-test--record (name place function)
+       (push (list name (ecc-load-test--describe place)
+                   (ecc-load-test--describe function)
+                   (ecc-load-test--caller name)
+                   (file-name-nondirectory (or load-file-name "")))
+             ecc-load-test--calls))
+     (defun ecc-load-test--recorder (name place function)
+       "Return the advice that records each call of NAME.
+PLACE and FUNCTION are where in the arguments the place and the function
+are, or nil."
+       (lambda (original &rest args)
+         (when (and (zerop ecc-load-test--depth) (ecc-load-test--recording-p))
+           (ecc-load-test--record name (and place (nth place args))
+                                  (nth function args)))
+         (let ((ecc-load-test--depth (1+ ecc-load-test--depth)))
+           (apply original args))))
+     (dolist (spec '((add-hook 0 1) (remove-hook 0 1)
+                     (advice-add 0 2) (advice-remove 0 1)
+                     (advice--add-function 1 2)
+                     (add-variable-watcher 0 1)
+                     (run-at-time nil 2) (run-with-timer nil 2)
+                     (run-with-idle-timer nil 2)))
+       (advice-add (car spec) :around (apply #'ecc-load-test--recorder spec)))
+     ;; What ecc leaves for a feature not loaded yet runs when that
+     ;; feature is, outside any file of ecc: it is recorded as ecc's, and
+     ;; the probe loads the feature to run it.
+     (advice-add
+      'eval-after-load :filter-args
+      (lambda (args)
+        (if (not (and (zerop ecc-load-test--depth) (ecc-load-test--recording-p)))
+            args
+          (ecc-load-test--record 'eval-after-load (car args) (cadr args))
+          (push (car args) ecc-load-test--deferred)
+          (let ((form (cadr args)))
+            (list (car args)
+                  (lambda ()
+                    (let ((ecc-load-test--after-load (list load-file-name)))
+                      (if (functionp form) (funcall form) (eval form t))))))))))
+  "The form that records, in the Emacs it runs in, what loading ecc does.
+Each call is (NAME PLACE FUNCTION CALLER FILE): NAME is the function
+called, PLACE the hook, function or variable it changes, FUNCTION what
+it puts there or takes away, CALLER who called it as
+`ecc-load-test--caller' says, and FILE the file being loaded.  A
+place or function that is not a symbol is recorded as its printed form.")
+
 (defun ecc-load-test--probe (dir)
-  "Return the form that loads every file of ecc in DIR and prints the hooks.
+  "Return what loading every file of ecc in DIR does, as recorded.
 Every file, and not `ecc' alone: some are loaded only once a feature is
-used, and their top level runs then all the same.  A hook is a variable
-whose name ends in -hook or -functions and does not start with ecc-."
-  `(let ((dir ,dir)
-         (found nil))
-     (add-to-list 'load-path dir)
-     (dolist (file (directory-files dir nil "\\`ecc.*\\.el\\'"))
-       (unless (equal file "ecc-autoloads.el")
-         (require (intern (file-name-base file)))))
-     (mapatoms
-      (lambda (symbol)
-        (when (and (boundp symbol)
-                   (not (string-prefix-p "ecc-" (symbol-name symbol)))
-                   (string-match-p "-\\(hook\\|functions\\)\\'" (symbol-name symbol)))
-          (let ((value (default-value symbol)))
-            (dolist (function (if (and (listp value) (not (functionp value)))
-                                  value
-                                (list value)))
-              (when (and (symbolp function)
-                         (string-prefix-p "ecc-" (symbol-name function)))
-                (push (cons symbol function) found)))))))
-     (princ "\necc-load-test: ")
-     (prin1 found)
-     (terpri)))
+used, and their top level runs then all the same.  The NS port's
+stand-ins come first, so that what `ecc-chat' does there runs too.  The
+value is a list of the calls `ecc-load-test--recorder' describes, in
+the order they were made."
+  (ecc-load-test--run
+   `(progn
+      ,ecc-load-test--ns-stand-ins
+      ,ecc-load-test--recorder
+      (add-to-list 'load-path ,dir)
+      (dolist (file (directory-files ,dir nil "\\`ecc.*\\.el\\'"))
+        (unless (equal file "ecc-autoloads.el")
+          (require (intern (file-name-base file)))))
+      (dolist (feature (reverse ecc-load-test--deferred))
+        (if (symbolp feature) (require feature nil t) (load feature t t)))
+      (reverse ecc-load-test--calls))))
+
+(defun ecc-load-test--ecc-name-p (object)
+  "Non-nil when OBJECT is a symbol named as ecc's."
+  (and (symbolp object) (string-prefix-p "ecc-" (symbol-name object))))
+
+(defun ecc-load-test--ecc-call-p (call)
+  "Non-nil when CALL, as the probe records it, is ecc's doing.
+It is when what it puts somewhere is an ecc function, or when ecc's code
+made it: a function of ecc, a closure, or a form at the top level of a
+file of ecc.  What is left is Emacs's own code doing its own work while
+ecc loads -- `package-get-version' turning on `emacs-lisp-mode' in a
+buffer of its own, which puts that mode's functions on its hooks."
+  (pcase-let ((`(,_name ,_place ,function ,caller . ,_) call))
+    (or (ecc-load-test--ecc-name-p function)
+        (keywordp caller)
+        (ecc-load-test--ecc-name-p caller))))
+
+(defun ecc-load-test--offence-p (call)
+  "Non-nil when CALL changes something that is not ecc's.
+Adding to or taking from a hook of ecc is what loading is for, and
+leaving code for a feature is not a change until that feature loads,
+when what the code does is recorded in turn.  Anything else is not ecc's:
+a hook of Emacs, advice, a variable watcher or a timer."
+  (pcase-let ((`(,name ,place . ,_) call))
+    (not (or (eq name 'eval-after-load)
+             (and (memq name '(add-hook remove-hook))
+                  (ecc-load-test--ecc-name-p place))))))
+
+(defun ecc-load-test--offences (calls)
+  "Return the calls among CALLS that are ecc's and change what is not ecc's."
+  (seq-filter #'ecc-load-test--offence-p
+              (seq-filter #'ecc-load-test--ecc-call-p calls)))
 
 (ert-deftest ecc-load-test-loading-puts-nothing-on-emacs-hooks ()
-  "Loading every file of ecc puts no ecc function on a hook of Emacs.
-In an Emacs of its own: in this one the other tests have long since
-opened the reviews, Spaces and sessions that put them there."
-  (let ((dir (file-name-directory (locate-library "ecc.el" t))))
-    (with-temp-buffer
-      (should (zerop (call-process
-                      (expand-file-name invocation-name invocation-directory)
-                      nil t nil "-Q" "--batch"
-                      "--eval" (prin1-to-string (ecc-load-test--probe dir)))))
-      (goto-char (point-min))
-      (should (search-forward "ecc-load-test: " nil t))
-      (should (equal (read (current-buffer)) nil)))))
+  "Loading every file of ecc changes nothing of Emacs's: it only wires ecc to itself.
+In an Emacs of its own, since in this one the other tests have long
+since opened the reviews, Spaces and sessions that change things.  While
+a file of ecc loads, every `add-hook', `remove-hook', `advice-add',
+`advice-remove', `add-function' (`advice--add-function'),
+`add-variable-watcher', `run-at-time', `run-with-timer' and
+`run-with-idle-timer' is recorded, whatever the name of the hook or
+variable, whether the function is a symbol or a closure, global or
+buffer-local; a body left with `with-eval-after-load' is run by loading
+its feature, and recorded the same.  Each one ecc made must add to or
+take from a hook named ecc-, and nothing else may be there.  What
+Emacs's own functions do on their own account during the load is not
+ecc's, as `ecc-load-test--ecc-call-p' says; the tests on
+`ecc-load-test--fixture' show that each kind of change is caught."
+  (let* ((calls (ecc-load-test--probe
+                 (file-name-directory (locate-library "ecc.el" t))))
+         (ecc (seq-filter #'ecc-load-test--ecc-call-p calls)))
+    ;; A recorder that saw nothing would pass the rest.
+    (should (seq-find (lambda (call) (eq (car call) 'add-hook)) ecc))
+    (should-not (ecc-load-test--offences calls))))
+
+(defun ecc-load-test--fixture (source &optional compile)
+  "Return what the probe records of a file of ecc whose body is SOURCE.
+SOURCE is a string of forms.  The file, ecc-zz-probe-fixture.el, defines
+`ecc-zz-f' and `zz-probe-later', a feature of its own to defer to,
+before SOURCE.  It is byte-compiled first when COMPILE is non-nil, so
+that the forms run as byte-code, as the package's own do."
+  (let ((dir (make-temp-file "ecc-load-test-" t)))
+    (unwind-protect
+        (let ((file (expand-file-name "ecc-zz-probe-fixture.el" dir)))
+          (with-temp-file (expand-file-name "zz-probe-later.el" dir)
+            (insert ";;; -*- lexical-binding: t -*-\n(provide 'zz-probe-later)\n"))
+          (with-temp-file file
+            (insert ";;; ecc-zz-probe-fixture.el --- -*- lexical-binding: t -*-\n"
+                    "(defun ecc-zz-f (&rest _) nil)\n"
+                    "(defvar zz-probe-foo-function #'ignore)\n"
+                    source
+                    "\n(provide 'ecc-zz-probe-fixture)\n"))
+          (when compile
+            (let ((byte-compile-warnings nil)
+                  (load-path (cons dir load-path)))
+              (should (byte-compile-file file))))
+          (ecc-load-test--probe dir))
+      (delete-directory dir t))))
+
+(defmacro ecc-load-test--should-catch (source name)
+  "Check that a fixture whose body is SOURCE is caught for a call of NAME.
+Both as source and as byte-code."
+  `(dolist (compile '(nil t))
+     (let ((offences (ecc-load-test--offences
+                      (ecc-load-test--fixture ,source compile))))
+       (should (equal (list compile (mapcar #'car offences))
+                      (list compile '(,name)))))))
+
+(ert-deftest ecc-load-test-probe-catches-a-function-on-an-emacs-hook ()
+  "An ecc function put on a hook of Emacs is caught."
+  (ecc-load-test--should-catch
+   "(add-hook 'post-command-hook #'ecc-zz-f)" add-hook))
+
+(ert-deftest ecc-load-test-probe-catches-a-closure-on-an-emacs-hook ()
+  "A closure put on a hook of Emacs by a file of ecc is caught.
+At the top level, from a loop over the hooks, and from inside a
+function of Emacs that calls the closure, `mapc'."
+  (ecc-load-test--should-catch
+   "(add-hook 'post-command-hook (lambda () nil))" add-hook)
+  (ecc-load-test--should-catch
+   "(dolist (hook '(post-command-hook)) (add-hook hook (lambda () nil)))"
+   add-hook)
+  (ecc-load-test--should-catch
+   "(mapc (lambda (hook) (add-hook hook #'ignore)) '(post-command-hook))"
+   add-hook))
+
+(ert-deftest ecc-load-test-probe-catches-any-hook-name ()
+  "A hook whose name ends in -hooks, or in nothing like a hook, is caught."
+  (ecc-load-test--should-catch
+   "(defvar some-mode-hooks nil) (add-hook 'some-mode-hooks #'ecc-zz-f)"
+   add-hook)
+  (ecc-load-test--should-catch
+   "(defvar zz-probe-listeners nil) (add-hook 'zz-probe-listeners #'ecc-zz-f)"
+   add-hook)
+  (ecc-load-test--should-catch
+   "(remove-hook 'post-command-hook #'ecc-zz-f)" remove-hook))
+
+(ert-deftest ecc-load-test-probe-catches-advice ()
+  "Advice on a function of Emacs, and its removal, are caught."
+  (ecc-load-test--should-catch
+   "(advice-add 'message :around #'ecc-zz-f)" advice-add)
+  (ecc-load-test--should-catch
+   "(advice-add 'message :around (lambda (f &rest args) (apply f args)))"
+   advice-add)
+  (ecc-load-test--should-catch
+   "(advice-remove 'message #'ecc-zz-f)" advice-remove))
+
+(ert-deftest ecc-load-test-probe-catches-add-function ()
+  "`add-function' on a variable, global or buffer-local, is caught."
+  (ecc-load-test--should-catch
+   "(add-function :before zz-probe-foo-function #'ecc-zz-f)"
+   advice--add-function)
+  (ecc-load-test--should-catch
+   "(add-function :before (local 'zz-probe-foo-function) #'ecc-zz-f)"
+   advice--add-function))
+
+(ert-deftest ecc-load-test-probe-catches-timers-and-watchers ()
+  "A timer or a variable watcher started by loading is caught."
+  (ecc-load-test--should-catch "(run-at-time 60 nil #'ecc-zz-f)" run-at-time)
+  (ecc-load-test--should-catch "(run-with-timer 60 nil #'ecc-zz-f)" run-with-timer)
+  (ecc-load-test--should-catch
+   "(run-with-idle-timer 60 nil (lambda () nil))" run-with-idle-timer)
+  (ecc-load-test--should-catch
+   "(add-variable-watcher 'fill-column #'ecc-zz-f)" add-variable-watcher))
+
+(ert-deftest ecc-load-test-probe-catches-what-loading-calls ()
+  "A function of ecc called at load time is ecc's, whatever it puts on a hook."
+  (ecc-load-test--should-catch
+   "(defun ecc-zz-install () (add-hook 'post-command-hook #'ignore))
+(ecc-zz-install)"
+   add-hook))
+
+(ert-deftest ecc-load-test-probe-catches-what-is-left-for-later ()
+  "What a file of ecc leaves for a feature to run is recorded when it runs.
+The probe loads the feature, so a hook the body puts a function on is
+caught, though no file of ecc is loading by then."
+  (ecc-load-test--should-catch
+   "(with-eval-after-load 'zz-probe-later
+  (add-hook 'post-command-hook #'ecc-zz-f))"
+   add-hook))
+
+(ert-deftest ecc-load-test-probe-lets-ecc-wire-itself ()
+  "Adding to and taking from ecc's own hooks is no offence, and is recorded.
+Function or closure, at the top level or in a body left for a feature."
+  (dolist (compile '(nil t))
+    (let ((calls (ecc-load-test--fixture
+                  "(defvar ecc-zz-thing-hook nil)
+(defvar ecc-zz-thing-functions nil)
+(add-hook 'ecc-zz-thing-hook #'ecc-zz-f)
+(add-hook 'ecc-zz-thing-functions (lambda (&rest _) nil))
+(remove-hook 'ecc-zz-thing-hook #'ecc-zz-f)
+(with-eval-after-load 'zz-probe-later
+  (add-hook 'ecc-zz-thing-hook #'ecc-zz-f))"
+                  compile)))
+      (should (equal (list compile
+                           (mapcar #'car (seq-filter #'ecc-load-test--ecc-call-p
+                                                     calls))
+                           (ecc-load-test--offences calls))
+                     (list compile
+                           '(add-hook add-hook remove-hook eval-after-load
+                                      add-hook)
+                           nil))))))
+
+(ert-deftest ecc-load-test-probe-leaves-emacs-to-itself ()
+  "What a function of Emacs does on its own account while ecc loads is not ecc's.
+`emacs-lisp-mode' in a buffer of its own puts the mode's functions on
+its hooks, as `package-get-version' has it do when ecc asks for its
+version.  The probe records those calls and finds them Emacs's: their
+functions are not ecc's, and a function of Emacs made them."
+  (let ((calls (ecc-load-test--fixture
+                "(with-temp-buffer (emacs-lisp-mode))")))
+    (should (seq-find (lambda (call) (eq (car call) 'add-hook)) calls))
+    (should-not (seq-filter #'ecc-load-test--ecc-call-p calls))))
 
 (defun ecc-load-test--run (form)
   "Evaluate FORM in an Emacs of its own and return what it returns.
@@ -312,19 +598,6 @@ it there and does not nest it again."
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))
                                       maps)))))))
-
-;; The NS port's input-method functions, which `ecc-chat' advises so the
-;; placeholder makes way for working text.  Batch has no NS port, so the
-;; tests below define stand-ins under the same names and provide
-;; `ns-win', as the NS port has done by the time ecc loads.
-(defconst ecc-load-test--ns-stand-ins
-  '(progn
-     (dolist (function '(ns-insert-working-text
-                         ns-insert-marked-text
-                         ns-delete-working-text))
-       (defalias function #'ignore))
-     (provide 'ns-win))
-  "The form that makes this Emacs look like the NS port to `ecc-chat'.")
 
 (defun ecc-load-test--advice-form ()
   "Return the form that lists every ecc function advising one not ecc's.
