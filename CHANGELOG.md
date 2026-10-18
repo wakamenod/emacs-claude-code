@@ -75,6 +75,16 @@ Verified against **Claude Code CLI 2.1.290**.
   25. The keys are unchanged, since every session buffer is made with the
   whole package loaded, and a `c` or `e` a user binds in
   `ecc-request-section-map` still wins over the review's.
+- The answers to a permission request -- `C-c C-a` and `C-c C-d` from the
+  prompt, `a` in the transcript, and `a`, `d`, `A`, `u` and `r` on the
+  request -- are bound in keymaps of `ecc-perm.el`, `ecc-perm-chat-map`,
+  `ecc-perm-transcript-map` and `ecc-perm-request-section-map`, which
+  `ecc-perm` hangs under `ecc-chat-mode-map`, `ecc-chat-transcript-map`
+  and `ecc-request-section-map`, rather than in those maps themselves.
+  `ecc-chat.el` no longer requires `ecc-perm`, and with it `ecc-dispatch`
+  and `ecc-sync`: loading the chat mode loads 15 modules where it loaded
+  18. The keys are unchanged, and one of them a user binds in a chat map
+  still wins over `ecc-perm`'s.
 - The Capabilities buffer -- `ecc-capabilities-show`, `ecc-capabilities-mode`
   and the rest of `ecc-capabilities-*` -- is in a file of its own,
   `ecc-capabilities.el`, rather than in `ecc-dashboard.el`. Every name,
