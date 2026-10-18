@@ -353,12 +353,23 @@ the top of the buffer can read the page before it."
     (prog1 (ecc-history--replay session (nthcdr from lines) abandoned)
       (ecc-history--redraw session))))
 
+(defun ecc-history--command-session ()
+  "Return the session the command being run was called on.
+That is the session of the current buffer, or of the window clicked: a
+click on the button of a window that is not selected runs the command
+with the buffer of the selected one current."
+  (let* ((event last-command-event)
+         (window (and (mouse-event-p event)
+                      (posn-window (event-start event)))))
+    (with-current-buffer (if (windowp window) (window-buffer window) (current-buffer))
+      (or ecc-render--session
+          (user-error "This buffer is not a session")))))
+
 (defun ecc-history-load-more (session &optional n-turns)
   "Read the N-TURNS turns before the ones SESSION already shows.
 The turns are put in front of the ones already there, and the buffer
 is drawn again from the top.  Returns the number read."
-  (interactive (list (or (bound-and-true-p ecc-render--session)
-                         (user-error "This buffer is not a session"))))
+  (interactive (list (ecc-history--command-session)))
   (let* ((offset (ecc-session-history-offset session))
          (file (ecc-history-file (ecc-session-id session))))
     (cond
@@ -810,6 +821,16 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions\='."
                    (ecc-history-read-recording session))))
       (ecc-history-take-over session info))
     t))
+
+(defvar ecc-history-load-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-history-load-more)
+    (define-key map [mouse-2] #'ecc-history-load-more)
+    map)
+  "The keys of the button that reads an older page of the recording.
+A parent of `ecc-history-button-map', above the button's own keys.")
+
+(ecc-chat-add-keymap-parent ecc-history-button-map ecc-history-load-map)
 
 (add-hook 'ecc-prompt-intercept-functions #'ecc-history-resume-intercept)
 (add-to-list 'ecc-prompt-immediate-commands ecc-history-resume-command)

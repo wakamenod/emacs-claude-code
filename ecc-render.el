@@ -78,12 +78,10 @@
 (require 'ecc-diff)
 (require 'ecc-visual)
 
-(declare-function ecc-history-load-more "ecc-history" (session &optional n-turns))
-
 ;; The keymaps belong to `ecc-chat', which sits above this module; they
 ;; are looked up by name when the text is drawn.
 (defvar ecc-chat-transcript-map)
-(defvar ecc-chat-button-map)
+(defvar ecc-history-button-map)
 (defvar ecc-request-section-map)
 (defvar ecc-file-section-map)
 
@@ -1145,16 +1143,14 @@ there is none."
     (let ((start (point)))
       (insert-text-button
        "Load older messages"
-       'action (lambda (_button)
-                 (require 'ecc-history)
-                 (ecc-history-load-more session))
        'follow-link t
        'help-echo "Load the previous 50 turns")
       (insert "\n")
-      ;; The button's own keys, RET and mouse-2, sit on top of the keys
-      ;; of the transcript.
+      ;; The button has no action of its own: its keys, RET and
+      ;; mouse-2, are what `ecc-history' hangs under its keymap, on top
+      ;; of the keys of the transcript.
       (ecc-render--mark start (point) "history" 0
-                        (or (ecc-render--map 'ecc-chat-button-map)
+                        (or (ecc-render--map 'ecc-history-button-map)
                             (ecc-render--map 'ecc-chat-transcript-map)))
       (ecc-render--mark-heading start "history")
       (ecc-render--register "history" start (point) 0))))
