@@ -66,6 +66,7 @@
 (require 'ecc-inline)
 (require 'ecc-window)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-answer)
 
 ;; Each of these is in a module that calls this one, and each is loaded

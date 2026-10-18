@@ -57,6 +57,7 @@
 (require 'ecc-model)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-window)
 
 ;;;; What an entry says

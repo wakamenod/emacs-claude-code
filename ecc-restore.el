@@ -72,6 +72,7 @@
 (require 'ecc-lifecycle)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-display)
 
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
 (declare-function ecc-space-of-root "ecc-space" (root))

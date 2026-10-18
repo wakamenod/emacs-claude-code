@@ -48,6 +48,7 @@
 (require 'ecc-render)
 (require 'ecc-perm)
 (require 'ecc-window)
+(require 'ecc-display)
 (require 'ecc-plan)
 
 (defvar ecc-answer-confirm t

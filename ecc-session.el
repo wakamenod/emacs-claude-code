@@ -46,6 +46,7 @@
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-markdown)
 (require 'ecc-diff)
 (require 'ecc-window)

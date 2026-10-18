@@ -50,8 +50,9 @@
 ;; what opens, refreshes or resumes from the transcript, `ecc-perm'
 ;; the answers to a request waiting for one, `ecc-review' the comment
 ;; and the edit on such a request, `ecc-history' what the button above
-;; the first turn reads, and the queue, the hint, the terminal and the
-;; menu a key or two each.  They all build on this file, so the dependency runs one way: `ecc-chat-mode'
+;; the first turn reads, `ecc-display' the switch to another session,
+;; and the queue, the hint, the terminal and the menu a key or two
+;; each.  They all build on this file, so the dependency runs one way: `ecc-chat-mode'
 ;; loads nothing.  What makes a session buffer is at the end of this
 ;; file, `ecc-session-ensure-buffer', and it loads the whole package
 ;; before it makes one (`ecc--require-package'), so that every buffer
@@ -217,7 +218,6 @@ PARENT is added once however often the module is loaded."
     (define-key map (kbd "C-c C-n") #'ecc-chat-next-turn)
     (define-key map (kbd "C-c C-p") #'ecc-chat-previous-turn)
     (define-key map (kbd "C-c C-b") #'ecc-btw-show)
-    (define-key map (kbd "C-c C-t") #'ecc-switch-session)
     map)
   "Keymap of `ecc-chat-mode', in force in the prompt region.
 Everything here is RET, TAB, a movement key or a key under the mode

@@ -73,6 +73,7 @@
 (require 'ecc-proc)
 (require 'json)
 (require 'ecc-window)
+(require 'ecc-display)
 (require 'ecc-capability)
 
 ;;;; Options

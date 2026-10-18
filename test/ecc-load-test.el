@@ -26,9 +26,9 @@
 ;; and takes its baseline without `ecc-worktree' or `ecc-review'; and
 ;; `ecc-proc' alone names the MCP server on the command line.
 ;;
-;; The last four are about `ecc-window' and the Spaces above it:
-;; `ecc-window' calls into no module that requires it beyond the buffer
-;; of a session; and a recording opened under `spaces', a project focused
+;; The last are about `ecc-window', `ecc-display' and the Spaces above
+;; them: `ecc-window' calls into no module that requires it, nor does
+;; `ecc-display', which shows a session; and a recording opened under `spaces', a project focused
 ;; and a command that asks which project it is in all reach the Space,
 ;; which is a method there only once `ecc-space' has been loaded.
 
@@ -105,8 +105,8 @@ printed and read back, so it must have a printed representation."
 (ert-deftest ecc-load-test-chat-buffer-has-module-keys ()
   "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
 The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
-`ecc-queue', `ecc-hint', `ecc-tui' and `ecc-transient' give them their
-keys; `ecc-session-ensure-buffer', in `ecc-chat' too, loads the whole
+`ecc-queue', `ecc-hint', `ecc-tui', `ecc-display' and `ecc-transient'
+give them their keys; `ecc-session-ensure-buffer', in `ecc-chat' too, loads the whole
 package before it makes the buffer.  Most of the ways to a buffer -- a
 recording read back, the terminal, an answer from anywhere, a Space --
 load `ecc-chat' and never `ecc-prompt' or `ecc-transient', so without
@@ -134,13 +134,14 @@ every path makes one: `ecc-chat' required and
                                      (key-binding (kbd "C-c ?"))
                                      (lookup-key ecc-chat-transcript-map (kbd "t"))
                                      (lookup-key ecc-chat-transcript-map (kbd "?"))
+                                     (key-binding (kbd "C-c C-t"))
                                      (and (memq #'ecc-hint--setup-mode-line
                                                 ecc-chat-mode-hook)
                                           t))))))
                    (list feature #'ecc-prompt-send #'ecc-session-visit
                          #'ecc-prompt-capf #'ecc-queue-show
                          #'ecc-hint-accept-suggestion #'ecc-menu
-                         #'ecc-tui-open #'ecc-menu t)))))
+                         #'ecc-tui-open #'ecc-menu #'ecc-switch-session t)))))
 
 ;; The test above makes the buffer the way every path does; this one
 ;; takes the one path that loads no more than `ecc-chat' on its own,
@@ -527,7 +528,7 @@ started."
                          (ecc-mcp-stop)))))
                  '(nil nil nil t))))
 
-;;;; What ecc-window reaches up to
+;;;; What ecc-window and ecc-display reach up to
 
 (defun ecc-load-test--references (file)
   "Return (TOP . INNER) for the forms of FILE.
@@ -596,19 +597,20 @@ a call into what loads FEATURE: the two files call each other."
           (lambda (a b) (string< (prin1-to-string a) (prin1-to-string b))))))
 
 (ert-deftest ecc-load-test-window-reaches-up-to-no-space ()
-  "`ecc-window' calls into nothing above it but the buffer of a session.
+  "`ecc-window' calls into nothing above it.
 The Spaces are built on top of the windows: what differs under them is a
-generic function of `ecc-window' that `ecc-space' specialises, and no
-`declare-function' or `require' of `ecc-window' names `ecc-space' or any
-other module that requires it.  What is left is the buffer a session is
-shown in and its prompt, which `ecc-chat' makes; a reference added here
-fails this, and one taken away is struck off."
-  (should (equal (ecc-load-test--upward 'ecc-window)
-                 '((declare ecc-chat-goto-prompt ecc-chat)
-                   (declare ecc-session-ensure-buffer ecc-chat)
-                   (require ecc-chat ecc-chat)
-                   (require ecc-chat ecc-chat)
-                   (require ecc-chat ecc-chat)))))
+generic function that `ecc-space' specialises, and no `declare-function'
+or `require' of `ecc-window' names `ecc-space' or any other module that
+requires it.  Showing a session, which needs the buffer `ecc-chat'
+makes, is `ecc-display', above both."
+  (should (equal (ecc-load-test--upward 'ecc-window) nil)))
+
+(ert-deftest ecc-load-test-display-reaches-up-to-nothing ()
+  "`ecc-display' calls into nothing above it.
+Everything that shows a session requires it, so a `declare-function' or
+a `require' inside a function of it that named one of those would be a
+call into what loads it; a reference added here fails this."
+  (should (equal (ecc-load-test--upward 'ecc-display) nil)))
 
 (ert-deftest ecc-load-test-only-chat-loads-the-package ()
   "No module but `ecc-chat' loads `ecc' at run time.
@@ -627,7 +629,7 @@ it."
 
 (ert-deftest ecc-load-test-spaces-reached-from-a-recording ()
   "A recording opened under `spaces' is shown in a Space, in an Emacs of its own.
-`ecc-window' loads nothing of `ecc-space': the Space is a method that is
+`ecc-display' loads nothing of `ecc-space': the Space is a method that is
 there once `ecc-space' is loaded, and before that the `classic' answer
 is the one given.  So whatever shows a session has to have loaded it,
 or a session under `spaces' lands in a window role with no word said.
@@ -654,9 +656,9 @@ loads `ecc-history' and nothing above it."
 
 (ert-deftest ecc-load-test-focus-project-cold-reaches-the-space ()
   "A project focused in an Emacs that has loaded nothing of ecc gets its Space.
-`ecc-focus-project' is defined in `ecc-window', which loads nothing of
+`ecc-focus-project' is defined in `ecc-display', which loads nothing of
 `ecc-space', and under `spaces' the answer is a method of `ecc-space':
-an autoload that loaded `ecc-window' alone gave the `classic' one, which
+an autoload that loaded `ecc-display' alone would give the `classic' one, which
 refuses a project with no session.  Its autoload loads the package."
   (should (equal (ecc-load-test--run
                   `(let ((root (file-name-as-directory

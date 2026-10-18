@@ -83,6 +83,7 @@
 (require 'ecc-perm)
 (require 'ecc-window)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-lifecycle)
 
 (autoload 'ecc-review-files-toggle "ecc-review-files" nil t)

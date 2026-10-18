@@ -70,6 +70,7 @@
 (require 'ecc-history)
 (require 'ecc-lifecycle)
 (require 'ecc-chat)
+(require 'ecc-display)
 
 (declare-function ecc-sidebar-show "ecc-sidebar" ())
 (declare-function ecc-sidebar-redraw "ecc-sidebar" (&rest _))
