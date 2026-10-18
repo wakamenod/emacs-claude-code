@@ -351,6 +351,84 @@ and the minibuffer is the only place the choice is visible."
             (should (eq session (car resumed)))
             (should (eq (and prefix t) (and (cadr resumed) t)))))))))
 
+;;;; Deleting a recording
+
+(defconst ecc-resume-test--id "24a1aa86-d53f-4457-b09e-4f4caf450f03"
+  "The session id of the recording `ecc-resume-test--with-recordings' lays out.")
+
+(ert-deftest ecc-resume-test-delete-recording-asks-first ()
+  "The recording goes after a yes, and stays after a no.
+What is asked names the file, so that what is about to go is seen."
+  (ecc-resume-test--with-recordings file
+    (let (asked)
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (prompt) (setq asked prompt) nil)))
+        (ecc-delete-recording ecc-resume-test--id))
+      (should (string-search (abbreviate-file-name file) asked))
+      (should (file-exists-p file))
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
+        (ecc-delete-recording ecc-resume-test--id))
+      (should-not (file-exists-p file)))))
+
+(ert-deftest ecc-resume-test-delete-recording-always-asks-which ()
+  "From the buffer of a stopped session the choice is still asked for.
+`ecc-read-session' takes that session without a question, which is the
+R offered after an exit; a delete cannot be undone, so it asks.  The
+session keeps its buffer once its recording is gone."
+  (ecc-resume-test--with-recordings file
+    (let* ((session (ecc-model-create-session
+                     :id ecc-resume-test--id :name "local"
+                     :project-root (ecc-resume-test--cwd file)))
+           (other (ecc-model-create-session
+                   :name "other" :project-root (ecc-resume-test--cwd file)))
+           asked)
+      (unwind-protect
+          (with-temp-buffer
+            (let ((ecc-render--session session))
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (prompt table &rest _)
+                           (setq asked prompt)
+                           (seq-find (lambda (label) (string-search "local" label))
+                                     (all-completions "" table))))
+                        ((symbol-function 'yes-or-no-p) (lambda (_) t)))
+                (call-interactively #'ecc-delete-recording)))
+            (should (equal asked "Delete recording: "))
+            (should-not (file-exists-p file))
+            (should (eq session (ecc-model-session ecc-resume-test--id))))
+        (ecc-test-cleanup-session session)
+        (ecc-test-cleanup-session other)))))
+
+(ert-deftest ecc-resume-test-delete-recording-refuses-a-running-session ()
+  "The recording of a session running in this Emacs is not deleted.
+Its CLI is still writing to it."
+  (ecc-resume-test--with-recordings file
+    (let* ((session (ecc-model-create-session
+                     :id ecc-resume-test--id :name "local"
+                     :project-root (ecc-resume-test--cwd file)))
+           (process (start-process "ecc-resume-test" nil "sleep" "60")))
+      (setf (ecc-session-process session) process)
+      (unwind-protect
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (_) (error "It asked about a running session"))))
+            (let ((err (should-error (ecc-delete-recording ecc-resume-test--id)
+                                     :type 'user-error)))
+              (should (string-search "local" (cadr err))))
+            (should (file-exists-p file)))
+        (delete-process process)
+        (ecc-test-cleanup-session session)))))
+
+(ert-deftest ecc-resume-test-delete-recording-refuses-no-recording ()
+  "A session with nothing recorded says so."
+  (ecc-resume-test--with-recordings file
+    (let ((session (ecc-model-create-session
+                    :name "fresh" :project-root (ecc-resume-test--cwd file))))
+      (unwind-protect
+          (let ((err (should-error (ecc-delete-recording (ecc-session-id session))
+                                   :type 'user-error)))
+            (should (equal (cadr err) "fresh has no recording"))
+            (should (file-exists-p file)))
+        (ecc-test-cleanup-session session)))))
+
 (provide 'ecc-resume-test)
 
 ;;; ecc-resume-test.el ends here
