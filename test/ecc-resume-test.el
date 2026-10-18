@@ -427,6 +427,26 @@ Its CLI is still writing to it."
         (delete-process process)
         (ecc-test-cleanup-session session)))))
 
+(ert-deftest ecc-resume-test-delete-recording-refuses-another-process ()
+  "A recording the registry says another process runs is not deleted.
+A terminal `claude' or another Emacs is still writing to it, and unlike
+a resume there is no going on anyway."
+  (ecc-resume-test--with-recordings file
+    (with-temp-file (expand-file-name "4242.json" ecc-registry-directory)
+      (insert (ecc--json-write
+               `((pid . 4242) (sessionId . ,ecc-resume-test--id)
+                 (name . "elsewhere") (status . "busy")))))
+    (let ((ecc-registry-check-process nil)
+          (title (alist-get 'title (ecc-history-scan-file file))))
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (_) (error "It asked about a running recording"))))
+        (let ((err (should-error (ecc-delete-recording ecc-resume-test--id)
+                                 :type 'user-error)))
+          (should (equal (cadr err)
+                         (format "%s is running in another process (PID 4242); stop it before deleting its recording"
+                                 title)))))
+      (should (file-exists-p file)))))
+
 (ert-deftest ecc-resume-test-delete-recording-refuses-no-recording ()
   "A session with nothing recorded says so."
   (ecc-resume-test--with-recordings file

@@ -500,25 +500,30 @@ since a single candidate is taken without the choice being shown.  The
 name is the session\='s in this Emacs, or the title the picker shows for
 a recording, and the id only when the recording has none.
 
-A session of this Emacs whose process is running is refused, since the
-CLI is still writing to the file.  One that has stopped keeps its
+A session running in this Emacs is refused, and so is one the registry
+says another process is running -- a terminal `claude\=' or another
+Emacs -- since that CLI is still writing to the file.  There is no
+going on anyway, as there is for a resume: a deleted recording cannot
+be brought back.  A session of this Emacs that has stopped keeps its
 buffer and its transcript, but resuming it afterwards has nothing to
 resume from."
   (interactive (list (ecc--read-session-id "Delete recording: ")))
-  (let ((session (ecc-model-session session-id)))
+  (let* ((session (ecc-model-session session-id))
+         (file (ecc-history-file session-id))
+         (name (cond (session (ecc-session-name session))
+                     ((and file (alist-get 'title (ecc-history-scan-file file))))
+                     (t session-id))))
     (when (and session (process-live-p (ecc-session-process session)))
-      (user-error "%s is running; stop it before deleting its recording"
-                  (ecc-session-name session)))
-    (let* ((file (or (ecc-history-file session-id)
-                     (user-error "%s has no recording"
-                                 (if session (ecc-session-name session)
-                                   session-id))))
-           (name (if session
-                     (ecc-session-name session)
-                   (or (alist-get 'title (ecc-history-scan-file file))
-                       session-id)))
-           (what (format "the recording of %s (%s)"
-                         name (abbreviate-file-name file))))
+      (user-error "%s is running; stop it before deleting its recording" name))
+    (when-let* ((entry (ecc-registry-session session-id)))
+      (user-error "%s is running in another process%s; stop it before deleting its recording"
+                  name (if-let* ((pid (alist-get 'pid entry)))
+                           (format " (PID %s)" pid)
+                         "")))
+    (unless file
+      (user-error "%s has no recording" name))
+    (let ((what (format "the recording of %s (%s)"
+                        name (abbreviate-file-name file))))
       (when (yes-or-no-p (format "Delete %s? " what))
         (delete-file file)
         (message "Deleted %s" what)))))

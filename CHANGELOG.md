@@ -29,9 +29,12 @@ Verified against **Claude Code CLI 2.1.290**.
   recordings of the project, or of every project when this one has none
   -- but always asks which, where `ecc-resume` takes the current buffer's
   stopped session without asking, and then asks again, naming the
-  session and the file. A session running in this Emacs is refused, since
-  its CLI is still writing to the file; a stopped one keeps its buffer,
-  with nothing left to resume from. The picker both commands use is
+  session and the file. A session running in this Emacs is refused, and
+  so is one the registry says another process is running -- a terminal
+  `claude` or another Emacs -- naming its PID, since that CLI is still
+  writing to the file; unlike a resume there is no going on anyway. A
+  stopped session of this Emacs keeps its buffer, with nothing left to
+  resume from. The picker both commands use is
   `ecc--read-session-id`, out of `ecc-read-session`.
 
 ### Changed
