@@ -61,7 +61,7 @@ The top half lists the Spaces with their state, their number and their name. A r
 | `k` | Stop this session |
 | `K` | Remove this worktree's directory |
 | `X` | Close this Space |
-| `a`, `d` | Allow or deny what this session waits on, as the [dashboard](/emacs-claude-code/features/sessions/#the-dashboard) does |
+| `a`, `d` | Allow or deny what this session waits on ([details](/emacs-claude-code/features/permissions/#answering-a-request)) |
 | `g` | Refresh git status and redraw |
 | `q` | Hide the sidebar |
 

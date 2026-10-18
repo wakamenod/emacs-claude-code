@@ -55,7 +55,6 @@ sidebar:
 
 | キー | 動作 | 参照 |
 |---|---|---|
-| `B` | ダッシュボード | [ダッシュボード](/emacs-claude-code/ja/features/sessions/#ダッシュボード) |
 | `C` | ケイパビリティ | [ケイパビリティ](/emacs-claude-code/ja/features/other/#ケイパビリティ) |
 | `h` | 記録された会話を読む。そこで `r` を押すと再開 | [再開](/emacs-claude-code/ja/features/sessions/#会話を再開する) |
 | `/` | 過去の会話を検索 | [検索](/emacs-claude-code/ja/features/sessions/#過去の会話を検索する) |

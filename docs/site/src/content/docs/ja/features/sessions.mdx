@@ -20,7 +20,7 @@ import Video from '../../../../components/Video.astro';
 
 ## セッションを始める場所
 
-`C-c c c` は、今のバッファが開いているファイル、または Dired バッファが表示しているディレクトリのプロジェクトでセッションを始めます。トランスクリプトやダッシュボードからは、その前にいたファイルのプロジェクトを使います。`C-u C-c c c` ではディレクトリを尋ねます。
+`C-c c c` は、今のバッファが開いているファイル、または Dired バッファが表示しているディレクトリのプロジェクトでセッションを始めます。トランスクリプトやサイドバーからは、その前にいたファイルのプロジェクトを使います。`C-u C-c c c` ではディレクトリを尋ねます。
 
 :::caution[ディレクトリは CLI の起動時に決まります]
 セッションを別のディレクトリへ移すことはできません。違うプロジェクトで始めてしまったら、kill してそちらで始め直してください。ディレクトリはエコーエリアに、プロジェクト名はヘッダー行に表示されます。
@@ -82,31 +82,15 @@ Permission prompt rendering  2026-09-08 14:07  2d4f54c9  2 hits
     › how does the permission prompt decide which diff to show?
     ‹ …the block is drawn by `ecc-perm.el`, and a permission prompt keeps the tool input…
 
-Dashboard columns  2026-09-06 10:22  f6743727  1 hit
-    ‹ …an idle row is dimmed, and a permission prompt puts `!` in the gutter…
+Tab line colors  2026-09-06 10:22  f6743727  1 hit
+    ‹ …a tab waiting for a permission prompt blinks, and an idle one is dimmed…
 ```
 
 `›` は自分のプロンプト、`‹` は Claude の返答です。`RET` か `o` で会話を開き、`n` と `p` で会話の間を移動し、`g` で検索し直します。巻き戻したり放棄したりしたブランチも検索します。
 
-## ダッシュボード
+## セッションを一覧する
 
-`C-c c B`（`ecc-dashboard`）で、この Emacs のセッションを一覧します。
-
-![ダッシュボード: 回答待ち、実行中、アイドル、終了済みの 4 つのセッションが一覧表示されている様子](../../../../assets/dashboard.png)
-
-各行には、名前、状態、プロジェクト、モデル、最後のプロンプト、最後に答えた時刻、コストが並びます。応答待ちのセッションが先頭に来て、`!` が付きます。ヘッダー行には、状態ごとの数、コストの合計、レート制限が出ます。
-
-| キー | 動作 |
-|---|---|
-| `RET` | そのセッションへ切り替え |
-| `+` | セッションを開始 |
-| `k` | セッションを停止（先に確認）。記録は残る |
-| `D` | セッションの記録をディスクから削除 |
-| `r` / `R` | セッションの名前を変更 / 再開 |
-| `a` / `d` | 最も古いリクエストを許可 / 拒否（[詳細](/emacs-claude-code/ja/features/permissions/#リクエストに答える)） |
-| `C` / `S` | [ケイパビリティ](/emacs-claude-code/ja/features/other/#ケイパビリティ) / スキルを表示 |
-| `U` | [使用量](/emacs-claude-code/ja/features/other/#使用量)を表示 |
-| `g` | 更新 |
+`C-c c b` で[サイドバー](/emacs-claude-code/ja/features/spaces/#サイドバー)を開くと、すべてのセッションが、それぞれ何を待っているかとともに並びます。サイドバーは Space を有効にしているときだけ使えます。Space を使わないときは、`C-u C-c C-t` ですべてのセッションから選べます。
 
 ## タブライン
 
@@ -136,7 +120,7 @@ Dashboard columns  2026-09-06 10:22  f6743727  1 hit
 
 応答待ちのセッションは 3 か所に示されます。
 
-- すべてのモードラインの `⚠ecc:N` が、全セッションの応答待ちのリクエストを数えます。クリックするとダッシュボードが開きます。
+- すべてのモードラインの `⚠ecc:N` が、全セッションの応答待ちのリクエストを数えます。クリックすると、`C-c c n` と同じく次のリクエストへジャンプします。
 - タブが点滅します。
 - 通知が届きます。`ecc-notify-level`（`'message`、`'pulse`、`'desktop`、`nil`）と `ecc-notify-events` で決めます。
 

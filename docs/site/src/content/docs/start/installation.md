@@ -60,7 +60,7 @@ Then configure it with `use-package` without `:vc`.
   :bind-keymap ("C-c c" . ecc-global-map))
 ```
 
-`ecc-global-map` answers requests, jumps to waiting sessions and opens the dashboard from any buffer. The site writes its keys with `C-c c`; see [Key bindings](/emacs-claude-code/reference/key-bindings/).
+`ecc-global-map` answers requests, jumps to waiting sessions and opens the sidebar from any buffer. The site writes its keys with `C-c c`; see [Key bindings](/emacs-claude-code/reference/key-bindings/).
 
 For a fuller example, see [the author's configuration](https://github.com/wakamenod/emacs-claude-code#configuration) in the README.
 
