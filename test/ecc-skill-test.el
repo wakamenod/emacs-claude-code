@@ -597,6 +597,34 @@ the same tag and is no skill."
                            '("mine"))))
         (delete-directory (expand-file-name ".claude" root) t)))))
 
+(ert-deftest ecc-skill-test-show-is-about-the-session-of-this-buffer ()
+  "`ecc-skill-show' from a session buffer shows that session's skills.
+With no session buffer current it falls back to the first of
+`ecc-model-sessions', the one started last.  It
+used to ask the dashboard for the session of its line first, and once
+the dashboard had been loaded that refused every buffer but a row of
+its own with \"No session on this line\".  Two sessions, so that the
+first one is not the right answer by accident."
+  (ecc-skill-test-with-session first
+    (let ((second (ecc-model-create-session
+                   :name "second" :project-root temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (with-current-buffer (ecc-session-ensure-buffer second)
+              (with-current-buffer (ecc-skill-show)
+                (should (eq ecc-skill--session second))))
+            (kill-buffer ecc-skill-buffer-name)
+            ;; Started last, `second' is first in the list: made from
+            ;; elsewhere, it is `first' that only its buffer reaches.
+            (with-current-buffer (ecc-session-ensure-buffer first)
+              (with-current-buffer (ecc-skill-show)
+                (should (eq ecc-skill--session first))))
+            (kill-buffer ecc-skill-buffer-name)
+            (with-temp-buffer
+              (with-current-buffer (ecc-skill-show)
+                (should (eq ecc-skill--session (car (ecc-model-sessions)))))))
+        (ecc-test-cleanup-session second)))))
+
 (provide 'ecc-skill-test)
 
 ;;; ecc-skill-test.el ends here

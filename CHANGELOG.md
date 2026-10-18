@@ -198,6 +198,11 @@ Verified against **Claude Code CLI 2.1.290**.
   one. Since 0.1.0 they stopped at "No session on this line" anywhere but
   on a row of the dashboard, as the session was asked of the dashboard
   first.
+- `M-x ecc-skill-show` shows the skills of the session buffer it is called
+  from, or of the most recent session. Since 0.2.0, once the dashboard had
+  been loaded -- and `ecc` loads it -- it stopped at "No session on this
+  line" anywhere but on a row of the dashboard, the same fault as the
+  Capabilities above.
 
 ## [0.4.5] - 2026-10-14
 
