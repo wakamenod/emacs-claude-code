@@ -36,8 +36,7 @@
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t
-        ecc-review-style 'ediff
+  (setq ecc-review-style 'ediff
         ;; The control panel is a frame of its own on a graphical Emacs,
         ;; and only this frame is recorded; worse, a run of this scene
         ;; stopped dead the moment the review opened -- every step after

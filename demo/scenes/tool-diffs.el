@@ -54,8 +54,7 @@
 
 (defun demo-scene-build ()
   "Build the project and the session.  Called by demo.el."
-  (setq ecc-use-spaces t
-        demo-counter 0)
+  (setq demo-counter 0)
   ;; A project of this scene's own: `demo-fresh-repository' deletes
   ;; `demo-root', and two scenes sharing one took each other's files.
   (setq demo-root "/tmp/ecc-demo-tool-diffs/")

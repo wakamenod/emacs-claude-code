@@ -83,8 +83,8 @@ Called by demo.el."
   (demo-write "src/table.py" (demo-lines #'demo-new))
   (find-file (expand-file-name "src/table.py" demo-root))
   (delete-other-windows)
-  (demo-say (format "ecc %s   theme %S   ecc-use-spaces %S"
-                    (ecc-version) custom-enabled-themes ecc-use-spaces))
+  (demo-say (format "ecc %s   theme %S"
+                    (ecc-version) custom-enabled-themes))
   nil)
 
 (defun demo-open-session ()

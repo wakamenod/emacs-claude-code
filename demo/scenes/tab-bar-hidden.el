@@ -50,7 +50,6 @@
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t)
   (setq ecc-space-always-session t)
   (setq demo-sessions nil)
   (setq demo-second-frame nil)
@@ -71,8 +70,8 @@
 (defun demo-open-source ()
   "Show the project, and say which ecc and which layout this is."
   (find-file (expand-file-name "greet.py" demo-root))
-  (demo-say (format "ecc-use-spaces = %S   tab-bar-show = %S   ecc from %s"
-                    ecc-use-spaces tab-bar-show
+  (demo-say (format "tab-bar-show = %S   ecc from %s"
+                    tab-bar-show
                     (abbreviate-file-name (locate-library "ecc-space"))))
   nil)
 

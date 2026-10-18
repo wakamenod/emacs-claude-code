@@ -89,8 +89,8 @@ lays itself out the plain way whatever it says."
   (demo-write "src/util.py" "def double(x):\n    return x + x\n")
   (find-file (expand-file-name "src/table.py" demo-root))
   (delete-other-windows)
-  (demo-say (format "ecc %s   theme %S   ecc-use-spaces %S   ediff-window-setup-function %S"
-                    (ecc-version) custom-enabled-themes ecc-use-spaces
+  (demo-say (format "ecc %s   theme %S   ediff-window-setup-function %S"
+                    (ecc-version) custom-enabled-themes
                     (default-value 'ediff-window-setup-function)))
   nil)
 

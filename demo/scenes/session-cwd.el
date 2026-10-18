@@ -34,8 +34,7 @@
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t
-        ecc-space-always-session t
+  (setq ecc-space-always-session t
         ;; The Bash call has to run without anybody answering for it.
         ecc-permission-mode "auto")
   (demo-fresh-repository)

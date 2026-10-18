@@ -47,8 +47,8 @@
   (demo-git "commit" "-q" "-m" "first")
   (find-file (expand-file-name "calc.py" demo-root))
   (delete-other-windows)
-  (demo-say (format "ecc %s   ecc-use-spaces = %S   ecc-review-style = %S"
-                    (ecc-version) ecc-use-spaces ecc-review-style))
+  (demo-say (format "ecc %s   ecc-review-style = %S"
+                    (ecc-version) ecc-review-style))
   nil)
 
 (defun demo-start-session ()

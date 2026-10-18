@@ -289,10 +289,8 @@ says back: without it the heading reads \"(resumed)\"."
 (defun shot-show (session)
   "Show the source in the frame and SESSION in the window ecc gives it.
 The layout is made with ecc's own window commands rather than by
-splitting the frame here: a session window carries a role, and the
-commands that move a session between windows look for that role.  A
-hand-made split has none of it, and the pictures would show something
-no user has."
+splitting the frame here: showing a session lays out its Space, and a
+hand-made split would show something no user has."
   ;; The sidebar every Space opens with is a column the pictures of one
   ;; feature cannot spare at this width; it has scenes of its own
   ;; (`shot-scene-sidebar', `shot-scene-spaces').  Left there, it is
@@ -305,8 +303,8 @@ no user has."
   ;; completion list is drawn in -- and window commands run from there
   ;; fail rather than act on the frame.
   (select-window (frame-first-window (selected-frame)))
-  ;; It may also have left the side windows ecc puts a session in, and a
-  ;; side window refuses to become the only window unless its
+  ;; It may also have left a side window -- the sidebar of a Space -- and
+  ;; a side window refuses to become the only window unless its
   ;; parameters are ignored.
   (let ((ignore-window-parameters t))
     (delete-other-windows))
@@ -416,15 +414,13 @@ either way).  The budget is larger to match, and still a budget."
 A file that is not on screen yet is put in the window that is not a
 session window: the scenes open more than one file, and only the first
 of them is there because `shot-show' put it there."
-  ;; Not a window with a role, nor a side window, nor one with ecc's own
-  ;; buffer in it: under the Spaces a transcript's window carries no
-  ;; role, and the broken file of the fix-error scene took the
-  ;; transcript's place (2026-10-10).
+  ;; Not a side window, nor one with ecc's own buffer in it: the broken
+  ;; file of the fix-error scene took the transcript's place when only
+  ;; the side windows were left out (2026-10-10).
   (let* ((buffer (find-file-noselect (or file shot-file)))
          (window (or (get-buffer-window buffer)
                      (seq-find (lambda (window)
-                                 (not (or (window-parameter window 'ecc-window-role)
-                                          (window-parameter window 'window-side)
+                                 (not (or (window-parameter window 'window-side)
                                           (ecc-window-own-buffer-p
                                            (window-buffer window)))))
                                (window-list nil 'no-minibuffer)))))

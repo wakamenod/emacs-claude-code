@@ -391,9 +391,9 @@ where the garbage that a collection later stops for comes from."
   (ecc-session-ensure-buffer bench-stream--session)
   (when (> bench-stream-history 0)
     (bench-stream--history bench-stream--session bench-stream-history))
-  ;; A session window of a running Emacs is a side window, which cannot
-  ;; be made the only one; the run is laid out from a main window, and
-  ;; the side windows stay where they are.
+  ;; The sidebar of a running Emacs is a side window, which cannot be
+  ;; made the only one; the run is laid out from a main window, and the
+  ;; side windows stay where they are.
   (select-window (or (seq-find (lambda (window)
                                  (not (window-parameter window 'window-side)))
                                (window-list nil 'no-minibuffer))
