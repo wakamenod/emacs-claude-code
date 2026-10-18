@@ -16,7 +16,7 @@ sidebar:
 | キー | 動作 | 参照 |
 |---|---|---|
 | `c` | セッションを開始（`C-u c` でディレクトリと名前を尋ねる） | [セッション](/emacs-claude-code/ja/features/sessions/#セッションを始める場所) |
-| `r` | 会話を再開（`-f` で分岐） | [再開](/emacs-claude-code/ja/features/sessions/#会話を再開する) |
+| `r` | 会話を再開（`-f` で分岐）。`d` で記録を削除 | [再開](/emacs-claude-code/ja/features/sessions/#会話を再開する) |
 | `S` | トランスクリプトを残して CLI を起動し直す | [CLI の起動し直し](/emacs-claude-code/ja/features/sessions/#cli-を起動し直す) |
 | `k` | プロセスを止め、バッファを kill。記録は残る | [セッション](/emacs-claude-code/ja/features/sessions/) |
 | `R` | セッションの名前を変更 | [セッション](/emacs-claude-code/ja/features/sessions/) |

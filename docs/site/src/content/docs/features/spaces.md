@@ -56,6 +56,8 @@ The top half lists the Spaces with their state, their number and their name. A r
 | `1`–`9` | Go to the Space with that number |
 | `c` | Start a session in this Space |
 | `W` | Create a worktree from this Space and start a session there |
+| `r` | Resume this session (`C-u r`: fork it), or go to it if it is running |
+| `R` | Rename this session |
 | `k` | Stop this session |
 | `K` | Remove this worktree's directory |
 | `X` | Close this Space |

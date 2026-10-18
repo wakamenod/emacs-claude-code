@@ -15,6 +15,25 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Added
+
+- The sidebar's `r` resumes the session of the row at point and `R`
+  renames it, as `C-c c r` and `C-c c R` do: a stopped session is started
+  again with `--resume` and its window selected, a running one is gone to,
+  and `C-u r` forks it into a new conversation. `R` offers the name the
+  session has and refuses an empty one. A row that is not a session
+  refuses both.
+- `ecc-delete-recording`, also `d` in `ecc-resume-menu` (`C-c c ? r d`),
+  deletes a recorded conversation from `~/.claude/projects`. It offers
+  what `ecc-resume` offers -- the sessions of this Emacs and the
+  recordings of the project, or of every project when this one has none
+  -- but always asks which, where `ecc-resume` takes the current buffer's
+  stopped session without asking, and then asks again with the file's
+  path. A session running in this Emacs is refused, since its CLI is
+  still writing to the file; a stopped one keeps its buffer, with nothing
+  left to resume from. The picker both commands use is
+  `ecc--read-session-id`, out of `ecc-read-session`.
+
 ### Changed
 
 - The `declare-function` forms pass `check-declare` on Emacs 29.1 and in an
