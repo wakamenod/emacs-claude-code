@@ -150,6 +150,11 @@ Verified against **Claude Code CLI 2.1.290**.
   longer declare a function of a module that requires them. Diff and
   ediff reviews, the walk through a pull request's commits and the reply
   pane behave as before.
+- Three declarations became top-level requires, where the module named
+  already lay below the one declaring it: `ecc-answer.el` requires
+  `ecc-plan`, `ecc-lifecycle.el` requires `ecc-answer`, and
+  `ecc-worktree.el` requires `ecc-review-pr`. Nothing changes for the
+  user.
 
 ### Fixed
 
