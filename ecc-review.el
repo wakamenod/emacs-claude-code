@@ -93,7 +93,6 @@
 (autoload 'ecc-review-pr-next-commit "ecc-review-pr" nil t)
 (autoload 'ecc-review-pr-previous-commit "ecc-review-pr" nil t)
 (autoload 'ecc-review-pr-send-all "ecc-review-pr" nil t)
-(declare-function ecc-review-pr-walk-status "ecc-review-pr" (&optional subject))
 (declare-function ecc-review-ediff-buffer "ecc-review-ediff" (session &optional paths))
 (declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
                   (session &optional range root paths))
@@ -1428,6 +1427,12 @@ not from who asked for it, so the review the menu opens and the one
                   (ecc-review--range-name range label)))
    (t (format "*ecc-review: %s*" (ecc-session-name session)))))
 
+(cl-defgeneric ecc-review-walk-status (_walk &optional _subject)
+  "Return what the review says of WALK, the larger review it is a part of.
+SUBJECT asks for the subject of the commit too.  `ecc-review-pr' has
+the method of a pull request, the one kind of walk there is."
+  nil)
+
 (defun ecc-review--header-line ()
   "Return the header line of the review buffer."
   (ecc--mode-line-escape
@@ -1445,7 +1450,7 @@ not from who asked for it, so the review the menu opens and the one
                'face 'ecc-heading-face)
    ;; Which commit of which pull request, and the comments of the others.
    (when ecc-review--walk
-     (concat "  ·  " (ecc-review-pr-walk-status)))
+     (concat "  ·  " (ecc-review-walk-status ecc-review--walk)))
    (when ecc-review--elsewhere
      (propertize (format "  ·  the right side is %s, not checked out here" ecc-review--elsewhere)
                  'face 'warning))

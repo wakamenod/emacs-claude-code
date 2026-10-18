@@ -842,6 +842,11 @@ when it never has been (`ecc-review-pr--count')."
     (seq-remove (lambda (cell) (equal (car cell) index))
                 (ecc-review-pr-walk-unsent walk))))
 
+(cl-defmethod ecc-review-walk-status ((_walk ecc-review-pr-walk) &optional subject)
+  "Say which commit of its pull request this review is, with its SUBJECT.
+It is `ecc-review-pr-walk-status'."
+  (ecc-review-pr-walk-status subject))
+
 (defun ecc-review-pr-walk-status (&optional subject)
   "Return what this review says of the pull request it is a part of.
 Which commit it is, out of how many -- with its SUBJECT when asked
