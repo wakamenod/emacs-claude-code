@@ -54,7 +54,6 @@
 (require 'ecc-notify)
 (require 'ecc-history)
 (require 'ecc-lifecycle)
-(require 'ecc-chat)
 (require 'ecc-display)
 
 ;;;; Settings

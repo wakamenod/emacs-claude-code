@@ -46,7 +46,6 @@
 (require 'project)
 (require 'ecc-core)
 (require 'ecc-model)
-(require 'ecc-visual)
 
 
 ;; The side windows a transcript was once shown in are gone with the

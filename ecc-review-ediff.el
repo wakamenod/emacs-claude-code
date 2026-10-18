@@ -142,7 +142,6 @@
 (require 'ecc-model)
 (require 'ecc-git)
 (require 'ecc-diff)
-(require 'ecc-window)
 (require 'ecc-display)
 (require 'ecc-review)
 (require 'ecc-review-files)

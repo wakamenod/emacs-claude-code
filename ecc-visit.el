@@ -83,7 +83,6 @@
 (require 'ecc-chat)
 (require 'ecc-display)
 (require 'ecc-markdown)
-(require 'ecc-window)
 (require 'ecc-image)
 
 ;;;; Reading a diff line back

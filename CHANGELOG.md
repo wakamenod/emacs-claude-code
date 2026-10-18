@@ -177,6 +177,10 @@ Verified against **Claude Code CLI 2.1.290**.
   `ecc-plan`, `ecc-lifecycle.el` requires `ecc-answer`, and
   `ecc-worktree.el` requires `ecc-review-pr`. Nothing changes for the
   user.
+- Twenty top-level requires of a module the file uses nothing of are gone,
+  most of them of `ecc-window` left behind when the display moved to
+  `ecc-display.el`; the modules require 310 of each other where they
+  required 330. Nothing changes for the user.
 - Showing a session is in a new module, `ecc-display.el`, which sits above
   `ecc-chat.el` and below every module that shows one. `ecc-display-session`,
   `ecc-window-select-session`, `ecc-window-display-beside-session`,

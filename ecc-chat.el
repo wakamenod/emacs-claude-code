@@ -82,7 +82,6 @@
 (require 'ecc-mermaid)
 (require 'ecc-proc)
 (require 'ecc-render)
-(require 'ecc-window)
 
 (defvar show-paren-predicate)
 
