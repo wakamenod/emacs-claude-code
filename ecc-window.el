@@ -85,14 +85,16 @@ A remote directory is never asked about: `project-current\=' would go
 over the wire for it, and the header line of a transcript
 \(`ecc-render--project-name\=') is drawn on every command."
   (or (and (not (file-remote-p directory))
-           ;; The one `ignore-errors' in ecc.  `project-current' calls
-           ;; each function on `project-find-functions', and other
-           ;; packages add their own there: what those signal is theirs
-           ;; to decide, so there is no error class to name here.  An
-           ;; error let out would break the header line, which is drawn
-           ;; on every command, so any failure falls back to the name of
-           ;; the directory below.
-           (ignore-errors
+           ;; `project-current' calls each function on
+           ;; `project-find-functions', and other packages add their own
+           ;; there: what those signal is theirs to decide, so there is
+           ;; no error class to name here.  An error let out would break
+           ;; the header line, which is drawn on every command, so it is
+           ;; reported and the name of the directory below stands in;
+           ;; with `debug-on-error' it is let out.  The header line keeps
+           ;; the name per directory (`ecc-render--project-cache'), so the
+           ;; report comes once and not on every command.
+           (with-demoted-errors "ecc: finding the project name: %S"
              (when-let* ((project (let ((default-directory directory))
                                     (project-current nil))))
                (project-name project))))

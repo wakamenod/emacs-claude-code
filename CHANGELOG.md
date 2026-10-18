@@ -217,6 +217,12 @@ Verified against **Claude Code CLI 2.1.290**.
   no session in it. Going there with `C-c c j`, a number in the sidebar or
   `RET` on its row starts one, under `ecc-space-always-session`, as going
   to any empty Space does.
+- The last `ignore-errors` in ecc is gone. When a function another
+  package put on `project-find-functions` signals while ecc asks for the
+  name of a session's project -- for the header line or a Space -- the
+  error is now shown in the echo area, once per directory, instead of
+  being dropped; the directory's own name still stands in, and with
+  `debug-on-error` the error reaches the debugger.
 
 ### Fixed
 
