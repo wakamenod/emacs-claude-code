@@ -195,7 +195,8 @@ still resolve to the modules' commands."
                        (define-key ecc-chat-mode-map (kbd "C-c ?") #'ignore)
                        (define-key ecc-chat-transcript-map (kbd "g") #'ignore)
                        (define-key ecc-chat-transcript-map (kbd "?") #'ignore)
-                       (define-key ecc-request-section-map (kbd "c") #'ignore))
+                       (define-key ecc-request-section-map (kbd "c") #'ignore)
+                       (define-key ecc-history-button-map (kbd "RET") #'ignore))
                      (require 'ecc)
                      (mapcar (lambda (entry)
                                (lookup-key (symbol-value (car entry))
@@ -211,11 +212,14 @@ still resolve to the modules' commands."
                                (ecc-chat-transcript-map . "RET")
                                (ecc-chat-mode-map . "C-c C-q")
                                (ecc-chat-transcript-map . "t")
-                               (ecc-request-section-map . "e")))))
+                               (ecc-request-section-map . "e")
+                               (ecc-history-button-map . "RET")
+                               (ecc-history-button-map . "<mouse-2>")))))
                  (list #'ignore #'ignore #'ignore #'ignore #'ignore #'ignore
                        #'ecc-prompt-toggle-context #'ecc-session-interrupt
                        #'ecc-session-visit #'ecc-queue-show #'ecc-tui-open
-                       #'ecc-review-edit-proposal))))
+                       #'ecc-review-edit-proposal
+                       #'ignore #'ecc-history-load-more))))
 
 (ert-deftest ecc-load-test-request-keys-come-with-the-review ()
   "The comment and the edit on a request are the review's, not the chat's.
@@ -235,6 +239,23 @@ the package loaded they are."
                        (list #'ecc-review-comment-request
                              #'ecc-review-edit-proposal)))))
 
+(ert-deftest ecc-load-test-history-button-keys-come-with-the-history ()
+  "The button above the first turn reads the older page once `ecc-history' is in.
+`ecc-render' draws the button with `ecc-history-button-map' and names no
+command of `ecc-history'; with `ecc-render' and `ecc-chat' alone its
+keys are the transcript's button keys, and `ecc-history' is not loaded."
+  (should (equal (ecc-load-test--run
+                  '(let ((keys (lambda ()
+                                 (list (lookup-key ecc-history-button-map (kbd "RET"))
+                                       (lookup-key ecc-history-button-map [mouse-2])))))
+                     (require 'ecc-render)
+                     (require 'ecc-chat)
+                     (list (featurep 'ecc-history)
+                           (funcall keys)
+                           (progn (require 'ecc) (funcall keys)))))
+                 (list nil (list #'push-button #'push-button)
+                       (list #'ecc-history-load-more #'ecc-history-load-more)))))
+
 (ert-deftest ecc-load-test-reloading-a-module-keeps-the-keymaps ()
   "Loading a module that binds chat keys again leaves the keymaps as they were.
 A module hangs its keymap under the chat maps once: a second load finds
@@ -242,13 +263,14 @@ it there and does not nest it again."
   (should (ecc-load-test--run
            '(let ((maps '(ecc-chat-mode-map ecc-chat-transcript-map
                           ecc-request-section-map ecc-file-section-map
-                          ecc-chat-button-map)))
+                          ecc-chat-button-map ecc-history-button-map)))
               (require 'ecc)
               (let ((before (mapcar (lambda (map)
                                       (copy-tree (symbol-value map)))
                                     maps)))
                 (dolist (file '("ecc-prompt" "ecc-session" "ecc-queue"
-                                "ecc-hint" "ecc-tui" "ecc-transient" "ecc-review"))
+                                "ecc-hint" "ecc-tui" "ecc-transient" "ecc-review"
+                                "ecc-history"))
                   (load file nil t))
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))
