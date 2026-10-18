@@ -3201,6 +3201,51 @@ Its comments are carried from the reading they were last on."
                   (should-not (get-buffer "*ecc-review: test*"))))
             (ecc-review-ediff-test--quit control)))))))
 
+(ert-deftest ecc-review-ediff-test-the-style-is-a-method ()
+  "`ecc-review' and `ecc-review-range' open the style through generics.
+`ecc-review--open' and `ecc-review--open-range' are generics of
+`ecc-review' on `ecc-review-style' whose default is the diff review;
+`ecc-review-ediff' has the methods of `ediff'.  Outside git the review
+of a session is a diff whatever the style."
+  (ecc-test-with-fake-session session
+    (let ((calls nil)
+          (repository "/repo/"))
+      (cl-letf (((symbol-function 'ecc-review-buffer)
+                 (lambda (_session paths) (push (list 'diff paths) calls) 'buffer))
+                ((symbol-function 'ecc-review-range-buffer)
+                 (lambda (_session range root paths)
+                   (push (list 'diff range root paths) calls)
+                   'buffer))
+                ((symbol-function 'ecc-review--display)
+                 (lambda (buffer _session) (push (list 'display buffer) calls) 'window))
+                ((symbol-function 'ecc-review-ediff-buffer)
+                 (lambda (_session paths) (push (list 'ediff paths) calls) 'control))
+                ((symbol-function 'ecc-review-ediff-range-buffer)
+                 (lambda (_session range root paths)
+                   (push (list 'ediff range root paths) calls)
+                   'control))
+                ((symbol-function 'ecc-git-root) (lambda (_path) repository)))
+        (should (eq (ecc-review--open 'diff session '("a")) 'window))
+        (should (eq (ecc-review--open 'ediff session '("a")) 'control))
+        (should (eq (ecc-review--open-range 'diff session "HEAD" "/r/" '("a")) 'window))
+        (should (eq (ecc-review--open-range 'ediff session "HEAD" "/r/" '("a")) 'control))
+        (should (equal (nreverse calls)
+                       '((diff ("a")) (display buffer)
+                         (ediff ("a"))
+                         (diff "HEAD" "/r/" ("a")) (display buffer)
+                         (ediff "HEAD" "/r/" ("a")))))
+        ;; The commands dispatch on the setting.
+        (let ((ecc-review-style 'ediff))
+          (should (eq (ecc-review session) 'control))
+          (should (eq (ecc-review-range session "HEAD" "/r/") 'control)))
+        (let ((ecc-review-style 'diff))
+          (should (eq (ecc-review session) 'window))
+          (should (eq (ecc-review-range session "HEAD" "/r/") 'window)))
+        ;; No repository: no two trees to lay side by side.
+        (setq calls nil repository nil)
+        (should (eq (ecc-review--open 'ediff session nil) 'window))
+        (should (equal (nreverse calls) '((diff nil) (display buffer))))))))
+
 ;;;; The two windows: their keys, and point driving the review
 
 ;; The keys of an ediff review in its two windows, point driving the

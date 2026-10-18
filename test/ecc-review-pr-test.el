@@ -1231,6 +1231,82 @@ when they are handed over, which is before it is told it is shown."
             (should (string-search "] -the next commit" ecc-review-ediff-long-help-message)))
         (ecc-review-pr-test--kill-reviews)))))
 
+;;;; What the kind of review decides
+
+(ert-deftest ecc-review-pr-test-the-walk-says-its-status-in-the-header ()
+  "The header line asks the walk of a review what it says of itself.
+`ecc-review-walk-status' is a generic of `ecc-review', nil for a walk
+it does not know; a pull request walk answers with
+`ecc-review-pr-walk-status'."
+  (let ((walk (ecc-review-pr--make-walk :root "/repo/")))
+    (cl-letf (((symbol-function 'ecc-review-pr-walk-status)
+               (lambda (&optional subject) (list 'status subject))))
+      (should (equal (ecc-review-walk-status walk) '(status nil)))
+      (should (equal (ecc-review-walk-status walk t) '(status t)))
+      (should-not (ecc-review-walk-status 'another-kind-of-walk t)))))
+
+(ert-deftest ecc-review-pr-test-the-kind-of-review-decides-the-replacing ()
+  "A diff review is followed in its window; an ediff review is quit for the next.
+`ecc-review-pr--replace' and `ecc-review-pr--refresh-header' are
+generics of `ecc-review-pr' whose default is the diff review;
+`ecc-review-ediff' has the methods of a review in `ediff-mode'."
+  (let ((walk (ecc-review-pr--make-walk :root "/repo/"))
+        (next (get-buffer-create " *ecc-review-pr-test next*"))
+        (calls nil)
+        (fail nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ecc-review-range-buffer)
+                   (lambda (_session range root &rest _)
+                     (push (list 'diff range root) calls)
+                     next))
+                  ((symbol-function 'ecc-review-pr--adopt)
+                   (lambda (_walk buffer) (push (list 'adopt buffer) calls)))
+                  ((symbol-function 'ecc-review--display)
+                   (lambda (buffer _session) (push (list 'display buffer) calls)))
+                  ((symbol-function 'ecc-review-pr--leave)
+                   (lambda (buffer) (push (list 'leave buffer) calls)))
+                  ((symbol-function 'ecc-review-ediff-quit)
+                   (lambda (control) (push (list 'quit control) calls)))
+                  ((symbol-function 'ecc-review-ediff-range-buffer)
+                   (lambda (_session range root &rest _)
+                     (push (list 'ediff range root ecc-review-pr--opening) calls)
+                     (when (equal range fail)
+                       (error "Cannot open %s" range))
+                     'control))
+                  ((symbol-function 'ecc-review-direct-refresh-headers)
+                   (lambda (control) (push (list 'headers control) calls)))
+                  ((symbol-function 'force-mode-line-update)
+                   (lambda (&rest _) (push 'mode-line calls))))
+          ;; A diff review: the next is read and shown, the one left let go.
+          (with-temp-buffer
+            (let ((from (current-buffer)))
+              (should (eq (ecc-review-pr--replace walk 'session "a^!" from) next))
+              (should (equal (nreverse calls)
+                             `((diff "a^!" "/repo/") (adopt ,next) (display ,next)
+                               (leave ,from))))
+              (setq calls nil)
+              (ecc-review-pr--refresh-header from)
+              (should (equal calls '(mode-line)))))
+          ;; An ediff review: quit, and the next opened as a review of WALK.
+          (with-temp-buffer
+            (ediff-mode)
+            (let ((from (current-buffer)))
+              (setq calls nil)
+              (setq-local ecc-review--range "a^!")
+              (should (eq (ecc-review-pr--replace walk 'session "b^!" from) 'control))
+              (should (equal (nreverse calls)
+                             `((quit ,from) (ediff "b^!" "/repo/" ,walk))))
+              ;; One that cannot be opened brings back the one quit.
+              (setq calls nil fail "c^!")
+              (should-error (ecc-review-pr--replace walk 'session "c^!" from))
+              (should (equal (nreverse calls)
+                             `((quit ,from) (ediff "c^!" "/repo/" ,walk)
+                               (ediff "a^!" "/repo/" ,walk))))
+              (setq calls nil)
+              (ecc-review-pr--refresh-header from)
+              (should (equal calls `((headers ,from)))))))
+      (kill-buffer next))))
+
 (provide 'ecc-review-pr-test)
 
 ;;; ecc-review-pr-test.el ends here
