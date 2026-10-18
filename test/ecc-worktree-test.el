@@ -25,9 +25,14 @@
 (defmacro ecc-worktree-test--with-directory (var &rest body)
   "Run BODY with VAR bound to a fresh directory, deleted afterwards.
 The cache is fresh as well: a test must not see what an earlier one
-asked git."
+asked git.  The directory is its truename, which is the path git
+reports: on macOS the temporary directory is under the `/var' link to
+`/private/var', and a session started at one is not in the project git
+names at the other, so a worktree with sessions was no Space there and
+was one on Linux (2026-10-18)."
   (declare (indent 1))
-  `(let ((,var (file-name-as-directory (make-temp-file "ecc-worktree" t)))
+  `(let ((,var (file-name-as-directory
+                (file-truename (make-temp-file "ecc-worktree" t))))
          (ecc-git--cache (make-hash-table :test #'equal))
          (ecc-worktree--offers-pending nil))
      (unwind-protect (progn ,@body)
@@ -931,7 +936,7 @@ A buffer with nothing unsaved is left open and counted."
             (should (file-directory-p path))
             (cl-letf (((symbol-function 'ecc-chat-draft) (lambda () "  \n")))
               (should (string-match-p
-                       "\\`removed .*; stopped drafting; 1 open buffer left visiting deleted files)\\'"
+                       "\\`removed .*; stopped drafting; closed its Space; 1 open buffer left visiting deleted files)\\'"
                        (car (ecc-worktree-test--remove path)))))
             (should (buffer-live-p buffer)))
         (with-current-buffer buffer (set-buffer-modified-p nil))
@@ -1051,7 +1056,7 @@ pull request merged into another feature branch has not landed."
             (ecc-session-state three) 'exited)
       (let ((line (car (ecc-worktree-test--remove path))))
         (should (string-match-p "\\`removed " line))
-        (should (string-match-p "; stopped three, two, one)\\'" line)))
+        (should (string-match-p "; stopped three, two, one; closed its Space)\\'" line)))
       (should-not (ecc-model-sessions))
       (should-not (file-directory-p path)))))
 
@@ -1120,7 +1125,7 @@ Each with a session of its own; only the removed one's is stopped."
       (ecc-worktree-test--commit open "b.txt")
       (let ((lines (ecc-worktree-test--remove done open)))
         (should (= 2 (length lines)))
-        (should (string-match-p "\\`removed .*feat-done/ .*stopped done-session)\\'"
+        (should (string-match-p "\\`removed .*feat-done/ .*stopped done-session; closed its Space)\\'"
                                 (nth 0 lines)))
         (should (string-match-p "\\`refused .*feat-open/?: not merged" (nth 1 lines))))
       (should-not (file-directory-p done))
@@ -1205,7 +1210,7 @@ A worktree with no Space is removed without a word about one."
   changes: none
   merged: yes -- its tip is in origin/develop
   sessions: caller (idle)
-  Space: [a-z]+
+  Space: yes
   removable: yes" text))
         (should (string-match-p "feat-dirty/ (branch feat/dirty)
   changes: 1 file uncommitted or untracked
