@@ -358,13 +358,19 @@ and the minibuffer is the only place the choice is visible."
 
 (ert-deftest ecc-resume-test-delete-recording-asks-first ()
   "The recording goes after a yes, and stays after a no.
-What is asked names the file, so that what is about to go is seen."
+What is asked names the session and the file, so that what is about to
+go is seen: a single candidate is taken without the choice shown.  A
+recording no session of this Emacs holds is named by its title, as the
+picker names it."
   (ecc-resume-test--with-recordings file
-    (let (asked)
+    (let ((title (alist-get 'title (ecc-history-scan-file file)))
+          asked)
+      (should title)
       (cl-letf (((symbol-function 'yes-or-no-p)
                  (lambda (prompt) (setq asked prompt) nil)))
         (ecc-delete-recording ecc-resume-test--id))
-      (should (string-search (abbreviate-file-name file) asked))
+      (should (equal asked (format "Delete the recording of %s (%s)? "
+                                   title (abbreviate-file-name file))))
       (should (file-exists-p file))
       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
         (ecc-delete-recording ecc-resume-test--id))
@@ -387,12 +393,16 @@ session keeps its buffer once its recording is gone."
             (let ((ecc-render--session session))
               (cl-letf (((symbol-function 'completing-read)
                          (lambda (prompt table &rest _)
-                           (setq asked prompt)
+                           (push prompt asked)
                            (seq-find (lambda (label) (string-search "local" label))
                                      (all-completions "" table))))
-                        ((symbol-function 'yes-or-no-p) (lambda (_) t)))
+                        ((symbol-function 'yes-or-no-p)
+                         (lambda (prompt) (push prompt asked) t)))
                 (call-interactively #'ecc-delete-recording)))
-            (should (equal asked "Delete recording: "))
+            (should (equal (nreverse asked)
+                           (list "Delete recording: "
+                                 (format "Delete the recording of local (%s)? "
+                                         (abbreviate-file-name file)))))
             (should-not (file-exists-p file))
             (should (eq session (ecc-model-session ecc-resume-test--id))))
         (ecc-test-cleanup-session session)

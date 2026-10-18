@@ -494,20 +494,34 @@ and always chosen: the session of the current buffer is not taken for
 granted, as it is for a resume, since what is about to go cannot be
 brought back.
 
+The question names the session and the file, as in
+  Delete the recording of docs (~/.claude/projects/.../3f2a....jsonl)?
+since a single candidate is taken without the choice being shown.  The
+name is the session\='s in this Emacs, or the title the picker shows for
+a recording, and the id only when the recording has none.
+
 A session of this Emacs whose process is running is refused, since the
 CLI is still writing to the file.  One that has stopped keeps its
 buffer and its transcript, but resuming it afterwards has nothing to
 resume from."
   (interactive (list (ecc--read-session-id "Delete recording: ")))
-  (let* ((session (ecc-model-session session-id))
-         (name (if session (ecc-session-name session) session-id)))
+  (let ((session (ecc-model-session session-id)))
     (when (and session (process-live-p (ecc-session-process session)))
-      (user-error "%s is running; stop it before deleting its recording" name))
-    (let ((file (or (ecc-history-file session-id)
-                    (user-error "%s has no recording" name))))
-      (when (yes-or-no-p (format "Delete %s? " (abbreviate-file-name file)))
+      (user-error "%s is running; stop it before deleting its recording"
+                  (ecc-session-name session)))
+    (let* ((file (or (ecc-history-file session-id)
+                     (user-error "%s has no recording"
+                                 (if session (ecc-session-name session)
+                                   session-id))))
+           (name (if session
+                     (ecc-session-name session)
+                   (or (alist-get 'title (ecc-history-scan-file file))
+                       session-id)))
+           (what (format "the recording of %s (%s)"
+                         name (abbreviate-file-name file))))
+      (when (yes-or-no-p (format "Delete %s? " what))
         (delete-file file)
-        (message "Deleted %s" (abbreviate-file-name file))))))
+        (message "Deleted %s" what)))))
 
 (defun ecc--offer-resume (session status)
   "Offer to resume SESSION, whose CLI stopped with STATUS.

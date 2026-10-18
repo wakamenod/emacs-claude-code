@@ -28,10 +28,10 @@ Verified against **Claude Code CLI 2.1.290**.
   what `ecc-resume` offers -- the sessions of this Emacs and the
   recordings of the project, or of every project when this one has none
   -- but always asks which, where `ecc-resume` takes the current buffer's
-  stopped session without asking, and then asks again with the file's
-  path. A session running in this Emacs is refused, since its CLI is
-  still writing to the file; a stopped one keeps its buffer, with nothing
-  left to resume from. The picker both commands use is
+  stopped session without asking, and then asks again, naming the
+  session and the file. A session running in this Emacs is refused, since
+  its CLI is still writing to the file; a stopped one keeps its buffer,
+  with nothing left to resume from. The picker both commands use is
   `ecc--read-session-id`, out of `ecc-read-session`.
 
 ### Changed
