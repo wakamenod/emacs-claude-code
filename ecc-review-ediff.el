@@ -549,13 +549,6 @@ The control panel is out of sight, but for the help \\`?' shows
                  (const :tag "Side by side, Claude at the bottom" side-by-side))
   :group 'ecc)
 
-(defun ecc-review-ediff-stacked-p (&optional control)
-  "Return non-nil when the review in CONTROL has one side above the other.
-CONTROL is the current buffer by default.  The split \\`|' toggles is
-what says so, not the setting the review opened with."
-  (eq (buffer-local-value 'ediff-split-window-function (or control (current-buffer)))
-      #'split-window-vertically))
-
 (defvar ecc-review-ediff-file-spacing 1
   "Blank lines put in front of each file but the first of an ediff review.
 The separator line alone runs the files together where one ends and the
@@ -3221,7 +3214,7 @@ of the right window (`ecc-review-direct--refresh-paths').  Run as the
 layout or the difference changes, from the hooks of the control
 buffer; nothing that would come out the same is set again."
   (with-current-buffer control
-    (let* ((stacked (ecc-review-ediff-stacked-p control))
+    (let* ((stacked (ecc-review-talk-stacked-p control))
            (fitted '(:eval (ecc-review-direct--header-line)))
            (keys (ecc-review-direct--key-pieces (unless stacked 'B))))
       (if stacked
