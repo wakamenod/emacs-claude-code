@@ -86,15 +86,6 @@
 (require 'ecc-display)
 (require 'ecc-lifecycle)
 
-(autoload 'ecc-review-files-toggle "ecc-review-files" nil t)
-(autoload 'ecc-review-files-filter "ecc-review-files" nil t)
-(autoload 'ecc-review-talk-tour "ecc-review-talk" nil t)
-(autoload 'ecc-review-talk-next "ecc-review-talk" nil t)
-(autoload 'ecc-review-talk-message "ecc-review-talk" nil t)
-(autoload 'ecc-review-pr-next-commit "ecc-review-pr" nil t)
-(autoload 'ecc-review-pr-previous-commit "ecc-review-pr" nil t)
-(autoload 'ecc-review-pr-send-all "ecc-review-pr" nil t)
-
 (defcustom ecc-review-style 'diff
   "How `ecc-review\=' and `ecc-review-range\=' show what changed.
 `diff' is one read-only unified diff of every file, the hunks walked
@@ -1196,6 +1187,12 @@ changed stays open when its changes have gone."
 
 (defvar ecc-review-mode-map
   (let ((map (make-sparse-keymap)))
+    ;; Said here rather than left to `define-derived-mode', which puts
+    ;; `diff-mode-map' under a map that has no parent when the mode is
+    ;; first turned on: by then `ecc-review-files', `ecc-review-talk'
+    ;; and `ecc-review-pr' have hung their keys under it, and
+    ;; `diff-mode-map' would be left out, M-n and M-p with it.
+    (set-keymap-parent map diff-mode-map)
     (define-key map (kbd "c") #'ecc-review-comment)
     (define-key map (kbd "l") #'ecc-review-list-comments)
     (define-key map (kbd "d") #'ecc-review-remove-comment)
@@ -1207,29 +1204,11 @@ changed stays open when its changes have gone."
     (define-key map (kbd "e") #'ecc-review-edit-proposal)
     (define-key map (kbd "g") #'ecc-review-refresh)
     (define-key map (kbd "q") #'quit-window)
-    ;; s was `diff-split-hunk', which edits the buffer and is refused
-    ;; below with the rest; s toggles the files pane instead.
-    (define-key map (kbd "s") #'ecc-review-files-toggle)
-    (define-key map (kbd "/") #'ecc-review-files-filter)
     ;; diff-mode's own moves, past the files the filter hides.
     (define-key map (kbd "n") #'ecc-review-next-hunk)
     (define-key map (kbd "p") #'ecc-review-previous-hunk)
     (define-key map (kbd "N") #'ecc-review-next-file)
     (define-key map (kbd "P") #'ecc-review-previous-file)
-    ;; Talking to the session of the review without going to its prompt
-    ;; (`ecc-review-talk.el').  t and M rather than N and m: N is the
-    ;; next file just above, and m is ediff's wide display, and the keys
-    ;; are the same in both kinds of review (decided 2026-10-02).
-    (define-key map (kbd "T") #'ecc-review-talk-tour)
-    (define-key map (kbd "t") #'ecc-review-talk-next)
-    (define-key map (kbd "M") #'ecc-review-talk-message)
-    ;; A pull request read a commit at a time (`ecc-review-pr.el').
-    ;; C-c C-a was `diff-apply-hunk', which writes into the file the
-    ;; hunk is of: a review reads and comments, and Claude changes the
-    ;; files.
-    (define-key map (kbd "]") #'ecc-review-pr-next-commit)
-    (define-key map (kbd "[") #'ecc-review-pr-previous-commit)
-    (define-key map (kbd "C-c C-a") #'ecc-review-pr-send-all)
     ;; The header line has room for the keys used most; ? lists every
     ;; one, as it does in the control panel of an ediff review.
     (define-key map (kbd "?") #'ecc-review-help)
@@ -1255,6 +1234,12 @@ Those move with n, N, p, P, { and } and visit with o and RET, and edit
 the buffer with k, K, R, s and more; every key of `diff-mode\=' that
 edits it, or reverts the file, says that the review is read-only
 instead (`ecc-review-read-only\='), but s, which lists the files.
+
+The keys of the files pane, of talking to the session and of a pull
+request read a commit at a time are not here: `ecc-review-files\=',
+`ecc-review-talk\=' and `ecc-review-pr\=' keep them in parents of this
+map, below its own keys and above those of `diff-mode-map\=', so that a
+key bound here wins.
 
 Nothing here takes a \\`C-c <letter>\=' key: the Emacs Lisp manual
 reserves those for users.  \\`C-c C-c\=' and \\`C-c C-k\=' shadow

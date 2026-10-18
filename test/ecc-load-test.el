@@ -533,6 +533,67 @@ the package loaded they are."
                        (list #'ecc-review-comment-request
                              #'ecc-review-edit-proposal)))))
 
+(ert-deftest ecc-load-test-review-keys-come-with-their-modules ()
+  "The files pane, talking and a pull request keep their review keys.
+`ecc-review' defines `ecc-review-mode-map' and binds no command of
+`ecc-review-files', `ecc-review-talk' or `ecc-review-pr' in it, so with
+`ecc-review' alone the three are not loaded and those keys are unbound
+or `diff-mode''s; each hangs its keymap under the map, and with the
+package loaded they are theirs."
+  (should (equal (ecc-load-test--run
+                  '(let ((keys (lambda ()
+                                 (mapcar (lambda (key)
+                                           (lookup-key ecc-review-mode-map (kbd key)))
+                                         '("s" "/" "T" "t" "M" "]" "[" "C-c C-a")))))
+                     (require 'ecc-review)
+                     (list (seq-filter #'featurep
+                                       '(ecc-review-files ecc-review-talk ecc-review-pr))
+                           (funcall keys)
+                           (progn (require 'ecc) (funcall keys)))))
+                 (list nil
+                       (list nil nil nil nil nil nil nil #'diff-apply-hunk)
+                       (list #'ecc-review-files-toggle #'ecc-review-files-filter
+                             #'ecc-review-talk-tour #'ecc-review-talk-next
+                             #'ecc-review-talk-message
+                             #'ecc-review-pr-next-commit #'ecc-review-pr-previous-commit
+                             #'ecc-review-pr-send-all)))))
+
+(ert-deftest ecc-load-test-review-keeps-the-keys-of-diff-mode ()
+  "A review buffer has the keys of `diff-mode' under those of the modules.
+`define-derived-mode' puts `diff-mode-map' under `ecc-review-mode-map'
+only when that has no parent when the mode is first turned on, and by
+then the modules above `ecc-review' have hung theirs: the map says its
+parent itself, so \\`M-n' still moves to the next hunk."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (require 'ecc)
+                     (with-temp-buffer
+                       (ecc-review-mode)
+                       (mapcar (lambda (key) (key-binding (kbd key)))
+                               '("M-n" "M-p" "o" "s" "C-c C-a" "c" "k")))))
+                 (list #'diff-hunk-next #'diff-hunk-prev #'diff-goto-source
+                       #'ecc-review-files-toggle #'ecc-review-pr-send-all
+                       #'ecc-review-comment #'ecc-review-read-only))))
+
+(ert-deftest ecc-load-test-user-review-bindings-survive-the-modules ()
+  "A key a user binds once `ecc-review' is loaded keeps its binding.
+The keys of `ecc-review-files', `ecc-review-talk' and `ecc-review-pr'
+are in parents of `ecc-review-mode-map', so loading them does not
+overwrite what the user put in the map; the keys left alone still
+resolve to the modules' commands."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (with-eval-after-load 'ecc-review
+                       (define-key ecc-review-mode-map (kbd "s") #'ignore)
+                       (define-key ecc-review-mode-map (kbd "t") #'ignore)
+                       (define-key ecc-review-mode-map (kbd "C-c C-a") #'ignore))
+                     (require 'ecc)
+                     (mapcar (lambda (key) (lookup-key ecc-review-mode-map (kbd key)))
+                             '("s" "t" "C-c C-a" "/" "T" "]"))))
+                 (list #'ignore #'ignore #'ignore
+                       #'ecc-review-files-filter #'ecc-review-talk-tour
+                       #'ecc-review-pr-next-commit))))
+
 (ert-deftest ecc-load-test-permission-keys-come-with-the-perm ()
   "The answers to a request are the keys of `ecc-perm', not of the chat.
 `ecc-chat' defines the keymaps and binds no command of `ecc-perm' in
@@ -580,20 +641,22 @@ keys are the transcript's button keys, and `ecc-history' is not loaded."
                        (list #'ecc-history-load-more #'ecc-history-load-more)))))
 
 (ert-deftest ecc-load-test-reloading-a-module-keeps-the-keymaps ()
-  "Loading a module that binds chat keys again leaves the keymaps as they were.
-A module hangs its keymap under the chat maps once: a second load finds
-it there and does not nest it again."
+  "Loading a module that binds chat or review keys again leaves the keymaps be.
+A module hangs its keymap under the chat maps, or the review's, once: a
+second load finds it there and does not nest it again."
   (should (ecc-load-test--run
            '(let ((maps '(ecc-chat-mode-map ecc-chat-transcript-map
                           ecc-request-section-map ecc-file-section-map
-                          ecc-chat-button-map ecc-history-button-map)))
+                          ecc-chat-button-map ecc-history-button-map
+                          ecc-review-mode-map)))
               (require 'ecc)
               (let ((before (mapcar (lambda (map)
                                       (copy-tree (symbol-value map)))
                                     maps)))
                 (dolist (file '("ecc-prompt" "ecc-session" "ecc-queue"
                                 "ecc-hint" "ecc-tui" "ecc-transient" "ecc-review"
-                                "ecc-history" "ecc-perm"))
+                                "ecc-history" "ecc-perm" "ecc-review-files"
+                                "ecc-review-talk" "ecc-review-pr"))
                   (load file nil t))
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))
