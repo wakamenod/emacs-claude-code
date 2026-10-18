@@ -9,6 +9,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'ert-x)
 (require 'ecc-test-helpers)
 (require 'ecc-window)
 (require 'ecc-session)
@@ -82,6 +83,20 @@ nowhere to be found among its siblings."
                                '("deep" "one")))))
           (ecc-test-cleanup-session deep)
           (ecc-model-remove-session deep))))))
+
+(ert-deftest ecc-window-test-project-name-reports-a-failing-backend ()
+  "A function on `project-find-functions' that signals is reported.
+The name of the directory stands in for the project's, and the error
+is in the echo area rather than dropped: it was swallowed by an
+`ignore-errors' before, a broken backend included."
+  (let ((project-find-functions
+         (list (lambda (_dir) (error "Backend broke"))))
+        (debug-on-error nil))
+    (ert-with-message-capture messages
+      (should (equal (ecc-window-project-name "/tmp/project-one/")
+                     "project-one"))
+      (should (string-match-p "finding the project name: .*Backend broke"
+                              messages)))))
 
 (ert-deftest ecc-window-test-session-project-ignores-the-cli-cwd ()
   "The cwd the CLI reports does not move a session out of its project.
