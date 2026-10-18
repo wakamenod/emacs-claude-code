@@ -66,10 +66,10 @@
 (require 'ecc-inline)
 (require 'ecc-window)
 (require 'ecc-chat)
+(require 'ecc-answer)
 
 ;; Each of these is in a module that calls this one, and each is loaded
 ;; by `ecc--require-package' before it is called.
-(declare-function ecc-pending-indicator-mode "ecc-answer" (&optional arg))
 (declare-function ecc-notify-mode "ecc-notify" (&optional arg))
 (declare-function ecc-tab-line-mode "ecc-notify" (&optional arg))
 
