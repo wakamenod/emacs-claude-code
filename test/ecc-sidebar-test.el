@@ -82,7 +82,7 @@ when BODY runs, and everything is put back afterwards."
            (with-current-buffer (get-buffer-create ecc-sidebar-buffer-name)
              (unless (derived-mode-p 'ecc-sidebar-mode) (ecc-sidebar-mode))
              (ecc-sidebar-redraw)
-             ,@body))
+             (ecc-test-keeping-the-frame ,@body)))
        (set-frame-parameter nil 'ecc-space-tabs ecc-sidebar-test--tabs-was)
        (mapc #'ecc-test-cleanup-session sessions)
        (when-let* ((buffer (get-buffer ecc-sidebar-buffer-name)))

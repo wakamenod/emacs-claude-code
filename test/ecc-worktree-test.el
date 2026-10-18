@@ -781,7 +781,7 @@ not installed unless BODY says otherwise."
        (cl-letf (((symbol-function #'yes-or-no-p)
                   (lambda (prompt) (error "Asked: %s" prompt)))
                  ((symbol-function #'ecc-proc-stop) #'ignore))
-         ,@body))))
+         (ecc-test-keeping-the-frame ,@body)))))
 
 (defun ecc-worktree-test--idle-session (&rest arguments)
   "Return a session made with ARGUMENTS, its process up and nothing to do."

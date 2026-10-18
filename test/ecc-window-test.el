@@ -34,7 +34,7 @@ themselves."
                    :name "one" :project-root "/tmp/project-one/"))
           (,second (ecc-model-create-session
                     :name "two" :project-root "/tmp/project-two/")))
-     (unwind-protect (progn ,@body)
+     (unwind-protect (ecc-test-keeping-the-frame ,@body)
        (ecc-test-cleanup-session ,first)
        (ecc-test-cleanup-session ,second))))
 
@@ -898,7 +898,7 @@ and
                       (lambda (session) (setq selected session) nil)))
              (set-window-buffer window
                                 (ecc-session-ensure-buffer ,(caar bindings)))
-             ,@body)
+             (ecc-test-keeping-the-frame ,@body))
          (set-window-buffer window old-buffer)
          ,@(mapcar (lambda (binding)
                      `(ecc-test-cleanup-session ,(car binding)))

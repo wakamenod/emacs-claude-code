@@ -21,6 +21,8 @@
 (require 'ecc-diff)
 (require 'ecc-visual)
 (require 'ecc-dispatch)
+(require 'ecc-space)
+(require 'ecc-sidebar)
 
 (defconst ecc-test-directory
   (file-name-directory (or load-file-name buffer-file-name))
@@ -100,6 +102,63 @@ with a snapshot is the transcript, not the placeholder or a draft."
   "Return the text of the log BUFFER without the time stamps."
   (replace-regexp-in-string "^[0-9:.]+ " "" (ecc-test-buffer-string buffer)))
 
+;;;; The frame
+
+(defvar ecc-test--space-variables
+  '(ecc-space--used ecc-space--implicit ecc-space--ensuring-parent
+    ecc-space--starting ecc-space--closing ecc-space--laying-out
+    ecc-sidebar--last-space)
+  "What `ecc-space' and the sidebar remember of the Spaces outside the frame.")
+
+(defun ecc-test--frame-own-parameters (frame)
+  "Return the parameters ecc keeps on FRAME, the `ecc-' ones."
+  (seq-filter (lambda (parameter)
+                (string-prefix-p "ecc-" (symbol-name (car parameter))))
+              (frame-parameters frame)))
+
+(defun ecc-test-call-keeping-the-frame (function)
+  "Call FUNCTION and put the selected frame back the way it was.
+What comes back is its tabs, its windows, whether `tab-bar-mode' was
+on, the `ecc-' frame parameters and what `ecc-space' remembers of the
+Spaces.  A test that shows a session under `ecc-use-spaces' makes a tab
+and turns the tab bar on, and the next test in the same Emacs would
+otherwise find both.  The tabs are copied: tab-bar renames a tab by
+changing its alist in place.
+
+A sidebar buffer made while FUNCTION ran is killed as well.  Putting
+the windows back takes it off the screen but leaves the buffer, and a
+live sidebar redraws on every change of state in whatever test comes
+next."
+  (let* ((frame (selected-frame))
+         (mode (bound-and-true-p tab-bar-mode))
+         (tabs (copy-tree (frame-parameter frame 'tabs)))
+         (configuration (current-window-configuration frame))
+         (parameters (ecc-test--frame-own-parameters frame))
+         (sidebar (get-buffer ecc-sidebar-buffer-name)))
+    (cl-progv ecc-test--space-variables
+        (mapcar #'symbol-value ecc-test--space-variables)
+      (unwind-protect (funcall function)
+        (let ((now (get-buffer ecc-sidebar-buffer-name)))
+          (when (and now (not (eq now sidebar)))
+            (kill-buffer now)))
+        (when (frame-live-p frame)
+          (unless (eq mode (bound-and-true-p tab-bar-mode))
+            (tab-bar-mode (if mode 1 -1)))
+          (set-frame-parameter frame 'tabs tabs)
+          ;; It makes current again the buffer that was current when the
+          ;; configuration was taken.
+          (save-current-buffer
+            (set-window-configuration configuration t))
+          (dolist (parameter (ecc-test--frame-own-parameters frame))
+            (set-frame-parameter frame (car parameter)
+                                 (alist-get (car parameter) parameters))))))))
+
+(defmacro ecc-test-keeping-the-frame (&rest body)
+  "Run BODY and put the selected frame back the way it was.
+See `ecc-test-call-keeping-the-frame'."
+  (declare (indent 0) (debug (body)))
+  `(ecc-test-call-keeping-the-frame (lambda () ,@body)))
+
 ;;;; Sessions without a process
 
 (defvar ecc-test-sent nil
@@ -127,11 +186,12 @@ that tests cannot see each other."
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-render-debounce 0)
-          ;; The layout is said rather than inherited.  A test that shows
-          ;; a session under `ecc-use-spaces' makes a tab and turns the
-          ;; tab bar on, which the next test in the same Emacs then finds
-          ;; -- the suite went order-dependent the day the default
-          ;; changed (2026-09-17).  The Spaces have harnesses of their
+          ;; The layout is said rather than inherited: the tests were
+          ;; written for `classic'.  A test that shows a session under
+          ;; `ecc-use-spaces' makes a tab and turns the tab bar on, which
+          ;; `ecc-test-keeping-the-frame' puts back; before it did, the
+          ;; suite went order-dependent the day the default changed
+          ;; (2026-09-17).  The Spaces have harnesses of their
           ;; own that turn it back on; `ecc-space-test-the-default-is-spaces'
           ;; is what holds the default itself to account.
           (ecc-use-spaces nil)
@@ -162,7 +222,7 @@ that tests cannot see each other."
                    ;; the diffs of a replay must not depend on that.
                    ((symbol-function #'ecc-diff-file-content)
                     (lambda (_path) nil)))
-           ,@body)
+           (ecc-test-keeping-the-frame ,@body))
        (ecc-test-cleanup-session ,var))))
 
 (defmacro ecc-test-with-running-cli (session &rest body)
