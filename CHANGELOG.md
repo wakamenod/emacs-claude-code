@@ -107,6 +107,18 @@ Verified against **Claude Code CLI 2.1.290**.
   Neither `ecc-perm.el` nor `ecc-visit.el` declares a function of a module
   that requires it, or loads one when it is asked. A plan is approved, and
   a path is found, as before.
+- The "Load older messages" button above the first turn has no action of
+  its own. `ecc-render.el` draws it with a new keymap,
+  `ecc-history-button-map`, which `ecc-chat.el` defines with the
+  transcript's button keys as its parent, and `ecc-history.el` binds
+  `RET` and `mouse-2` to `ecc-history-load-more` in a keymap of its own,
+  `ecc-history-load-map`, that it makes a parent of it. The renderer
+  no longer declares `ecc-history-load-more` or loads `ecc-history` at
+  run time to call it. The button reads, looks and answers as before,
+  mouse-1 included. A user's own binding in `ecc-history-button-map`
+  wins, as in the other keymaps of `ecc-chat.el`. A click reads the
+  session of the window it was made in, which need not be the selected
+  window.
 
 ### Fixed
 

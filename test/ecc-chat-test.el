@@ -312,12 +312,20 @@ nothing to do with whether two maps are ever live at once."
      ("R" . ecc-session-resume)
      ("d" . ecc-session-review-or-deny)
      ("T" . ecc-session-timeline)
-     ("w" . ecc-session-copy-at-point)))
+     ("w" . ecc-session-copy-at-point))
+    (ecc-history-button-map
+     ("RET" . ecc-history-load-more)
+     ("<mouse-2>" . ecc-history-load-more)
+     ("<follow-link>" . mouse-face)
+     ("t" . ecc-tui-open)
+     ("?" . ecc-menu)
+     ("g" . ecc-session-refresh)))
   "The keys the modules above `ecc-chat' give its keymaps.
 Those of `ecc-prompt', `ecc-session', `ecc-queue', `ecc-hint', `ecc-tui'
 and `ecc-transient', in every map in which each of them resolves,
 through the parents of the maps, as it did when `ecc-chat' bound them
-itself (2026-10-14).")
+itself (2026-10-14); and the keys of `ecc-history' on the button above
+the first turn, which was a closure of `ecc-render' until 2026-10-18.")
 
 (ert-deftest ecc-chat-test-modules-bind-their-keys ()
   "Each key the modules above `ecc-chat' bind resolves where it did.

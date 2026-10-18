@@ -48,7 +48,8 @@
 ;; (`ecc-chat-add-keymap-parent'): `ecc-prompt' the sending, the
 ;; history, the slash and what RET does in the region, `ecc-session'
 ;; what opens, refreshes or resumes from the transcript, `ecc-review'
-;; the comment and the edit on a request waiting for an answer, and the
+;; the comment and the edit on a request waiting for an answer,
+;; `ecc-history' what the button above the first turn reads, and the
 ;; queue, the hint, the terminal and the menu a key or two each.  They all
 ;; build on this file, so the dependency runs one way: `ecc-chat-mode'
 ;; loads nothing.  What makes a session buffer is at the end of this
@@ -309,6 +310,13 @@ row.  TAB folds, on this row as on every other.")
     (define-key map [follow-link] 'mouse-face)
     map)
   "Keymap of a button in the transcript, such as the history button.")
+
+(defvar ecc-history-button-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map ecc-chat-button-map)
+    map)
+  "Keymap of the button that reads the page before the first turn.
+`ecc-history' gives it the command, as a parent above the button's keys.")
 
 ;;;; The mode
 

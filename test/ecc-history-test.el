@@ -306,6 +306,55 @@ conversation has the same turns with it as without."
                                (ecc-test-buffer-string
                                 (ecc-session-buffer session))))))
 
+;; The button has no action of its own: `ecc-render' puts
+;; `ecc-history-button-map' on it, and this module hangs its command
+;; under that map.
+(ert-deftest ecc-history-test-button-keys-load-the-older-page ()
+  "RET on the button reads the turns before the first one shown."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-history-load session 2 ecc-history-test-file)
+    (puthash (ecc-session-id session) ecc-history-test-file ecc-history--files)
+    (with-current-buffer (ecc-session-buffer session)
+      (goto-char (point-min))
+      (should (search-forward "Load older messages" nil t))
+      (goto-char (match-beginning 0))
+      (should (eq (get-text-property (point) 'keymap) ecc-history-button-map))
+      (should (eq (key-binding (kbd "RET")) #'ecc-history-load-more))
+      (should (eq (key-binding [mouse-2]) #'ecc-history-load-more))
+      (should (eq (key-binding [follow-link]) 'mouse-face))
+      ;; The transcript's keys are still there.
+      (should (eq (key-binding (kbd "n")) #'ecc-chat-next-heading))
+      (call-interactively (key-binding (kbd "RET")))
+      (should (equal ecc-history-test-prompts (ecc-history-test--prompts session)))
+      (should-not (string-search "Load older messages"
+                                 (ecc-test-buffer-string (current-buffer)))))))
+
+(ert-deftest ecc-history-test-button-click-reads-the-clicked-session ()
+  "A click on the button reads the session of the window clicked.
+The window need not be the selected one, and the buffer current when the
+command runs is then the selected window's."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-history-load session 2 ecc-history-test-file)
+    (puthash (ecc-session-id session) ecc-history-test-file ecc-history--files)
+    (save-window-excursion
+      (delete-other-windows)
+      (let* ((buffer (ecc-session-buffer session))
+             (window (split-window))
+             (pos (with-current-buffer buffer
+                    (goto-char (point-min))
+                    (search-forward "Load older messages")
+                    (match-beginning 0))))
+        (set-window-buffer window buffer)
+        (with-temp-buffer
+          (should-not (eq (window-buffer (selected-window)) buffer))
+          (let ((last-command-event
+                 (list 'mouse-2 (list window pos '(0 . 0) 0))))
+            (call-interactively #'ecc-history-load-more)))
+        (should (equal ecc-history-test-prompts
+                       (ecc-history-test--prompts session)))))))
+
 (defun ecc-history-test--big-file (turns)
   "Write a recording of TURNS turns to a temporary file and return it.
 The lines have the shape of a real recording, with the bookkeeping the
