@@ -204,6 +204,27 @@ Verified against **Claude Code CLI 2.1.290**.
   line" anywhere but on a row of the dashboard, the same fault as the
   Capabilities above.
 
+### Removed
+
+- **Breaking.** The dashboard: `ecc-dashboard`, `C-c c B` and `B` in
+  `ecc-menu` (`C-c c ?`). The sidebar is the one list of the sessions:
+  `C-c c b` (`ecc-sidebar-focus`) goes into it, and its keys do what the
+  dashboard's did -- `RET` goes to the session, `c` starts one, `k` stops
+  it, `r` resumes it (`C-u r` forks), `R` renames it, and `a` / `d` answer
+  what it waits on. A recording is deleted with `ecc-delete-recording`,
+  also `d` in `ecc-resume-menu`, and Capabilities are `C` in `ecc-menu`.
+  `ecc-dashboard` stays as an obsolete alias of `ecc-sidebar-focus`, so a
+  key of your own bound to it opens the sidebar. The sidebar needs
+  `ecc-use-spaces`, which is on by default. The `⚠ecc:N` indicator in the
+  mode line, which opened the dashboard on `mouse-1`, now goes to the next
+  waiting request, as `C-c c n` does.
+- **Breaking.** What only the dashboard showed, with nothing in its place:
+  the header line's count of waiting, running and idle sessions, the total
+  cost and the worst rate limit as a bar; the model, last prompt, last
+  answer time and cost columns; and its `S`, the skills of the row's
+  session (`M-x ecc-skill-show` and `/skills` in the prompt still show
+  them). `M-x ecc-usage` (`C-c c U`) still shows the rate limits.
+
 ## [0.4.5] - 2026-10-14
 
 Verified against **Claude Code CLI 2.1.290**.

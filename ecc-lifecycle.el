@@ -35,7 +35,7 @@
 ;; sessions of this Emacs and the recordings beside them.
 ;;
 ;; It sits below every module that starts or stops a session -- the
-;; session buffer and its prompt, the dashboard, the Spaces, the
+;; session buffer and its prompt, the Spaces, the
 ;; sidebar, the worktrees, the review and the menus -- and requires only
 ;; what lies under them: the model, the process, the recordings, the
 ;; windows and the mode of a session buffer, `ecc-chat', which makes it.
@@ -140,7 +140,7 @@ finding it later among all the others."
 This is the interactive form of `ecc-start\=', out here where a test can
 reach it.  The directory comes from the buffer the user is working in
 rather than from whichever buffer happens to be current: `ecc-start\=' is
-run from a transcript, the dashboard or the scratch buffer as often as
+run from a transcript, the sidebar or the scratch buffer as often as
 from a file, and none of those says which project was meant."
   (let ((root (ecc-context-project-root)))
     (if current-prefix-arg

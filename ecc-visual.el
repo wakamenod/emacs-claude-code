@@ -200,7 +200,7 @@ One timer per buffer; asking again while it turns changes nothing."
 (defun ecc-visual-spinner-advance ()
   "Move the spinner on to its next frame.
 The frame is the same wherever it is drawn, so whoever turns it -- the
-timer of a session buffer, or the dashboard drawing its list again --
+timer of a session buffer, or the sidebar drawing its list again --
 moves every spinner on screen along with it."
   (cl-incf ecc-visual--tick))
 

@@ -624,6 +624,20 @@ things depending on which list was in front."
   (should (eq (lookup-key ecc-sidebar-mode-map (kbd "r")) #'ecc-sidebar-resume))
   (should (eq (lookup-key ecc-sidebar-mode-map (kbd "R")) #'ecc-sidebar-rename)))
 
+
+(ert-deftest ecc-sidebar-test-dashboard-is-an-obsolete-alias ()
+  "`ecc-dashboard' went in 0.5.0 and a binding of it opens the sidebar.
+The sidebar is the one list of the sessions now, and a user's own key
+for the dashboard should still land somewhere sensible."
+  (should (eq (symbol-function 'ecc-dashboard) 'ecc-sidebar-focus))
+  (should (equal (get 'ecc-dashboard 'byte-obsolete-info)
+                 '(ecc-sidebar-focus nil "0.5.0")))
+  (let (called)
+    (cl-letf (((symbol-function 'ecc-sidebar-focus)
+               (lambda () (interactive) (setq called t))))
+      (command-execute 'ecc-dashboard))
+    (should called)))
+
 (provide 'ecc-sidebar-test)
 
 ;;; ecc-sidebar-test.el ends here

@@ -2348,7 +2348,7 @@ screen when the window has no mode line."
 (defun ecc-render--model-name (session)
   "Return the short name of the model SESSION runs, or nil.
 The CLI names a model in full, `claude-sonnet-4-5-20250929\='; the
-footer under the prompt and the dashboard have room for the part that
+footer under the prompt and the sidebar have room for the part that
 tells one from another.  The model of the last answer comes first, so
 that a `/model\=' shows as soon as it is sent; init answers until there
 has been one, and nothing does before the first turn."

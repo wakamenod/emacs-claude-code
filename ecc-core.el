@@ -755,7 +755,7 @@ is not a model to show, so nil comes back for it."
 
 (defun ecc--project-label (directory)
   "Return the name of DIRECTORY itself, without the path leading to it.
-A dashboard column has room for the project, not for where it lives."
+A sidebar row has room for the project, not for where it lives."
   (if (or (null directory) (equal directory ""))
       ""
     (file-name-nondirectory (directory-file-name (expand-file-name directory)))))

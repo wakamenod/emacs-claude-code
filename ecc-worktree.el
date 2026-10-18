@@ -217,7 +217,7 @@ the name of the directory when the worktree is detached."
 ;; goes is the moment to ask whether the worktree should go too -- and
 ;; the only moment anybody is thinking about it.  The offer follows the
 ;; session out of the model rather than any one command: a session is
-;; stopped from the sidebar, from the dashboard, from a tab and from
+;; stopped from the sidebar, from a tab and from
 ;; Lisp, and the directory is left behind just the same in every one of
 ;; them.
 ;;

@@ -60,8 +60,6 @@
 (require 'ecc-proc)
 (require 'ecc-dispatch)
 
-(declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
-
 ;; posframe is not a dependency of this package: without it, and on a
 ;; frame that cannot carry a child frame, the buffer goes in a window.
 (declare-function posframe-workable-p "ext:posframe" ())
@@ -169,12 +167,10 @@ running."
 
 (defun ecc-usage--live-session ()
   "Return the running session this buffer is about, or nil."
-  (seq-find (lambda (session) (process-live-p (ecc-session-process session)))
-            (delq nil (list (and (boundp 'ecc-render--session)
-                                 (buffer-local-value 'ecc-render--session
-                                                     (current-buffer)))
-                            (and (derived-mode-p 'ecc-dashboard-mode)
-                                 (ecc-dashboard-session-at-point))))))
+  (when-let* ((session (and (boundp 'ecc-render--session)
+                            (buffer-local-value 'ecc-render--session
+                                                (current-buffer)))))
+    (and (process-live-p (ecc-session-process session)) session)))
 
 (defun ecc-usage--ask (callback)
   "Get the usage data and call CALLBACK with the session and the response.
