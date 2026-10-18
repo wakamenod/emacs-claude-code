@@ -196,6 +196,7 @@ still resolve to the modules' commands."
                        (define-key ecc-chat-transcript-map (kbd "g") #'ignore)
                        (define-key ecc-chat-transcript-map (kbd "?") #'ignore)
                        (define-key ecc-request-section-map (kbd "c") #'ignore)
+                       (define-key ecc-request-section-map (kbd "a") #'ignore)
                        (define-key ecc-history-button-map (kbd "RET") #'ignore))
                      (require 'ecc)
                      (mapcar (lambda (entry)
@@ -207,18 +208,23 @@ still resolve to the modules' commands."
                                (ecc-chat-transcript-map . "g")
                                (ecc-chat-transcript-map . "?")
                                (ecc-request-section-map . "c")
+                               (ecc-request-section-map . "a")
                                (ecc-chat-mode-map . "C-c C-x")
                                (ecc-chat-mode-map . "C-c C-z")
                                (ecc-chat-transcript-map . "RET")
                                (ecc-chat-mode-map . "C-c C-q")
                                (ecc-chat-transcript-map . "t")
                                (ecc-request-section-map . "e")
+                               (ecc-request-section-map . "d")
+                               (ecc-chat-transcript-map . "a")
+                               (ecc-chat-mode-map . "C-c C-a")
                                (ecc-history-button-map . "RET")
                                (ecc-history-button-map . "<mouse-2>")))))
-                 (list #'ignore #'ignore #'ignore #'ignore #'ignore #'ignore
+                 (list #'ignore #'ignore #'ignore #'ignore #'ignore #'ignore #'ignore
                        #'ecc-prompt-toggle-context #'ecc-session-interrupt
                        #'ecc-session-visit #'ecc-queue-show #'ecc-tui-open
-                       #'ecc-review-edit-proposal
+                       #'ecc-review-edit-proposal #'ecc-perm-deny
+                       #'ecc-perm-allow #'ecc-perm-allow
                        #'ignore #'ecc-history-load-more))))
 
 (ert-deftest ecc-load-test-request-keys-come-with-the-review ()
@@ -238,6 +244,35 @@ the package loaded they are."
                  (list nil (list nil nil)
                        (list #'ecc-review-comment-request
                              #'ecc-review-edit-proposal)))))
+
+(ert-deftest ecc-load-test-permission-keys-come-with-the-perm ()
+  "The answers to a request are the keys of `ecc-perm', not of the chat.
+`ecc-chat' defines the keymaps and binds no command of `ecc-perm' in
+them, so with `ecc-chat' alone `ecc-perm' is not loaded and the keys are
+unbound, \`d' on a request falling through to the transcript's; with
+the package loaded they are the allow, the deny and the rest."
+  (should (equal (ecc-load-test--run
+                  '(let ((keys (lambda ()
+                                 (mapcar (lambda (entry)
+                                           (lookup-key (symbol-value (car entry))
+                                                       (kbd (cdr entry))))
+                                         '((ecc-chat-mode-map . "C-c C-a")
+                                           (ecc-chat-mode-map . "C-c C-d")
+                                           (ecc-chat-transcript-map . "a")
+                                           (ecc-request-section-map . "a")
+                                           (ecc-request-section-map . "d")
+                                           (ecc-request-section-map . "A")
+                                           (ecc-request-section-map . "u")
+                                           (ecc-request-section-map . "r"))))))
+                     (require 'ecc-chat)
+                     (list (featurep 'ecc-perm)
+                           (funcall keys)
+                           (progn (require 'ecc) (funcall keys)))))
+                 (list nil (list nil nil nil nil nil nil nil nil)
+                       (list #'ecc-perm-allow #'ecc-perm-deny #'ecc-perm-allow
+                             #'ecc-perm-allow #'ecc-perm-deny
+                             #'ecc-perm-allow-always #'ecc-perm-approve-turn
+                             #'ecc-perm-add-pattern)))))
 
 (ert-deftest ecc-load-test-history-button-keys-come-with-the-history ()
   "The button above the first turn reads the older page once `ecc-history' is in.
@@ -270,7 +305,7 @@ it there and does not nest it again."
                                     maps)))
                 (dolist (file '("ecc-prompt" "ecc-session" "ecc-queue"
                                 "ecc-hint" "ecc-tui" "ecc-transient" "ecc-review"
-                                "ecc-history"))
+                                "ecc-history" "ecc-perm"))
                   (load file nil t))
                 (equal before (mapcar (lambda (map)
                                         (copy-tree (symbol-value map)))
