@@ -262,6 +262,8 @@ nothing to do with whether two maps are ever live at once."
      ("C-c C-z" . ecc-session-interrupt)
      ("C-c C-e" . ecc-session-export-markdown)
      ("C-c C-q" . ecc-queue-show)
+     ("C-c C-a" . ecc-perm-allow)
+     ("C-c C-d" . ecc-perm-deny)
      ("C-c C-s" . ecc-hint-accept-suggestion)
      ("C-c ?" . ecc-menu))
     (ecc-chat-transcript-map
@@ -276,7 +278,8 @@ nothing to do with whether two maps are ever live at once."
      ("R" . ecc-session-resume)
      ("d" . ecc-session-review-or-deny)
      ("T" . ecc-session-timeline)
-     ("w" . ecc-session-copy-at-point))
+     ("w" . ecc-session-copy-at-point)
+     ("a" . ecc-perm-allow))
     (ecc-request-section-map
      ("t" . ecc-tui-open)
      ("?" . ecc-menu)
@@ -288,7 +291,12 @@ nothing to do with whether two maps are ever live at once."
      ("L" . ecc-session-show-log)
      ("R" . ecc-session-resume)
      ("T" . ecc-session-timeline)
-     ("w" . ecc-session-copy-at-point))
+     ("w" . ecc-session-copy-at-point)
+     ("a" . ecc-perm-allow)
+     ("d" . ecc-perm-deny)
+     ("A" . ecc-perm-allow-always)
+     ("u" . ecc-perm-approve-turn)
+     ("r" . ecc-perm-add-pattern))
     (ecc-file-section-map
      ("t" . ecc-tui-open)
      ("?" . ecc-menu)
@@ -301,7 +309,8 @@ nothing to do with whether two maps are ever live at once."
      ("L" . ecc-session-show-log)
      ("R" . ecc-session-resume)
      ("T" . ecc-session-timeline)
-     ("w" . ecc-session-copy-at-point))
+     ("w" . ecc-session-copy-at-point)
+     ("a" . ecc-perm-allow))
     (ecc-chat-button-map
      ("t" . ecc-tui-open)
      ("?" . ecc-menu)
@@ -312,20 +321,23 @@ nothing to do with whether two maps are ever live at once."
      ("R" . ecc-session-resume)
      ("d" . ecc-session-review-or-deny)
      ("T" . ecc-session-timeline)
-     ("w" . ecc-session-copy-at-point))
+     ("w" . ecc-session-copy-at-point)
+     ("a" . ecc-perm-allow))
     (ecc-history-button-map
      ("RET" . ecc-history-load-more)
      ("<mouse-2>" . ecc-history-load-more)
      ("<follow-link>" . mouse-face)
      ("t" . ecc-tui-open)
      ("?" . ecc-menu)
-     ("g" . ecc-session-refresh)))
+     ("g" . ecc-session-refresh)
+     ("a" . ecc-perm-allow)))
   "The keys the modules above `ecc-chat' give its keymaps.
 Those of `ecc-prompt', `ecc-session', `ecc-queue', `ecc-hint', `ecc-tui'
 and `ecc-transient', in every map in which each of them resolves,
 through the parents of the maps, as it did when `ecc-chat' bound them
-itself (2026-10-14); and the keys of `ecc-history' on the button above
-the first turn, which was a closure of `ecc-render' until 2026-10-18.")
+itself (2026-10-14); the keys of `ecc-history' on the button above
+the first turn, which was a closure of `ecc-render' until 2026-10-18;
+and the answers of `ecc-perm', which `ecc-chat' bound until 2026-10-18.")
 
 (ert-deftest ecc-chat-test-modules-bind-their-keys ()
   "Each key the modules above `ecc-chat' bind resolves where it did.

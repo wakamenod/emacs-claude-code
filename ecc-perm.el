@@ -58,6 +58,7 @@
 (require 'ecc-render)
 (require 'ecc-sync)
 (require 'ecc-window)
+(require 'ecc-chat)
 
 (defvar ecc-perm-default-deny-message "User denied this tool call."
   "Message sent to Claude when the user denies without giving a reason.")
@@ -790,6 +791,38 @@ else that collects the answers its own way sends too."
       (ecc-perm-close-buffer buffer))))
 
 (add-hook 'ecc-request-resolved-hook #'ecc-question--on-request-resolved)
+
+;;;; Keys
+
+(defvar ecc-perm-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-a") #'ecc-perm-allow)
+    (define-key map (kbd "C-c C-d") #'ecc-perm-deny)
+    map)
+  "The keys of the permissions in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(defvar ecc-perm-transcript-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "a") #'ecc-perm-allow)
+    map)
+  "The keys of the permissions in the transcript.
+A parent of `ecc-chat-transcript-map', so that a key bound there wins.")
+
+(defvar ecc-perm-request-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "a") #'ecc-perm-allow)
+    (define-key map (kbd "d") #'ecc-perm-deny)
+    (define-key map (kbd "A") #'ecc-perm-allow-always)
+    (define-key map (kbd "u") #'ecc-perm-approve-turn)
+    (define-key map (kbd "r") #'ecc-perm-add-pattern)
+    map)
+  "The keys of the permissions on a node that is waiting for an answer.
+A parent of `ecc-request-section-map', above the transcript's keys.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-perm-chat-map)
+(ecc-chat-add-keymap-parent ecc-chat-transcript-map ecc-perm-transcript-map)
+(ecc-chat-add-keymap-parent ecc-request-section-map ecc-perm-request-section-map)
 
 (provide 'ecc-perm)
 

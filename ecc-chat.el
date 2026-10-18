@@ -47,11 +47,11 @@
 ;; its commands in a keymap of its own and makes it a parent of them
 ;; (`ecc-chat-add-keymap-parent'): `ecc-prompt' the sending, the
 ;; history, the slash and what RET does in the region, `ecc-session'
-;; what opens, refreshes or resumes from the transcript, `ecc-review'
-;; the comment and the edit on a request waiting for an answer,
-;; `ecc-history' what the button above the first turn reads, and the
-;; queue, the hint, the terminal and the menu a key or two each.  They all
-;; build on this file, so the dependency runs one way: `ecc-chat-mode'
+;; what opens, refreshes or resumes from the transcript, `ecc-perm'
+;; the answers to a request waiting for one, `ecc-review' the comment
+;; and the edit on such a request, `ecc-history' what the button above
+;; the first turn reads, and the queue, the hint, the terminal and the
+;; menu a key or two each.  They all build on this file, so the dependency runs one way: `ecc-chat-mode'
 ;; loads nothing.  What makes a session buffer is at the end of this
 ;; file, `ecc-session-ensure-buffer', and it loads the whole package
 ;; before it makes one (`ecc--require-package'), so that every buffer
@@ -61,9 +61,9 @@
 ;; `ecc-hint' adds its part from `ecc-chat-mode-hook'.
 ;;
 ;; A request waiting for an answer is answered from the prompt region
-;; too, without walking to it: C-c C-a allows one and C-c C-d denies
-;; one, both through `ecc-perm-current-request', which falls back to the
-;; oldest request waiting when the point is not on one.
+;; too, without walking to it: `ecc-perm' puts the allow and the deny
+;; on C-c C-a and C-c C-d, and they fall back to the oldest request
+;; waiting when the point is not on one.
 ;;
 ;; Folding and movement work on the headings the renderer marked (the
 ;; `ecc-heading', `ecc-node' and `ecc-depth' text properties) and on the
@@ -81,7 +81,6 @@
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-window)
-(require 'ecc-perm)
 (require 'ecc-btw)
 
 (defvar show-paren-predicate)
@@ -217,8 +216,6 @@ PARENT is added once however often the module is loaded."
     ;; `keyboard-quit', which is what the finger meant.
     (define-key map (kbd "C-c C-n") #'ecc-chat-next-turn)
     (define-key map (kbd "C-c C-p") #'ecc-chat-previous-turn)
-    (define-key map (kbd "C-c C-a") #'ecc-perm-allow)
-    (define-key map (kbd "C-c C-d") #'ecc-perm-deny)
     (define-key map (kbd "C-c C-b") #'ecc-btw-show)
     (define-key map (kbd "C-c C-t") #'ecc-switch-session)
     map)
@@ -252,7 +249,6 @@ taking one.")
     (define-key map (kbd "DEL") #'scroll-down-command)
     (define-key map (kbd "i") #'ecc-chat-goto-prompt)
     (define-key map (kbd "q") #'quit-window)
-    (define-key map (kbd "a") #'ecc-perm-allow)
     ;; No C-c C-k here: it falls through to the mode map, where it
     ;; empties the draft, so that the key discards the draft wherever
     ;; point is, as C-c C-c sends it from wherever point is.  Bound to the interrupt in the transcript,
@@ -277,11 +273,6 @@ A key not here falls through to `ecc-chat-mode-map'.")
 (defvar ecc-request-section-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map ecc-chat-transcript-map)
-    (define-key map (kbd "a") #'ecc-perm-allow)
-    (define-key map (kbd "d") #'ecc-perm-deny)
-    (define-key map (kbd "A") #'ecc-perm-allow-always)
-    (define-key map (kbd "u") #'ecc-perm-approve-turn)
-    (define-key map (kbd "r") #'ecc-perm-add-pattern)
     map)
   "Keymap of a node that is waiting for an answer.
 The keys of `ecc-chat-transcript-map\=' keep their meaning here, so that
