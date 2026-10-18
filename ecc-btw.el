@@ -59,6 +59,7 @@
 (require 'ecc-markdown)
 (require 'ecc-window)
 (require 'ecc-chat)
+(require 'ecc-display)
 
 (declare-function posframe-workable-p "ext:posframe" ())
 (declare-function posframe-show "ext:posframe" (buffer &rest args))

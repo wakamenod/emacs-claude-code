@@ -55,13 +55,8 @@
 (require 'ecc-mcp)
 (require 'ecc-lifecycle)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-review-pr)
-
-(declare-function ecc-space-forget "ecc-space" (root))
-(declare-function ecc-space-at-p "ecc-space" (root))
-;; Bound around the kill loop below: a Space closing itself halfway
-;; through a removal would take the tab out from under the command.
-(defvar ecc-space--closing)
 
 (defvar ecc-worktree-directory ".claude/worktrees"
   "Where `ecc-worktree-create' puts a worktree.
@@ -180,23 +175,15 @@ Remove it anyway? "
     (run-hook-with-args 'ecc-worktree-removed-hook path)
     path))
 
-(defun ecc-worktree--forget-space (root)
-  "Close the Space of the worktree ROOT, which is about to be removed.
-Under `classic\=' there are no Spaces and nothing to close; `ecc-space\='
-is loaded here rather than required, this file being underneath it."
-  (when ecc-use-spaces
-    (require 'ecc-space)
-    (ecc-space-forget root)))
-
 (defun ecc-worktree--stop-and-close (root sessions)
   "Stop SESSIONS and close the Space of the worktree ROOT, to remove it.
 Binding `ecc-space--closing' both closes the Spaces quietly and keeps
 `ecc-worktree--session-removed' from offering what the caller is about
-to do anyway.  ROOT must still be there, for `ecc-worktree--forget-space'."
+to do anyway.  ROOT must still be there, for `ecc-space-forget'."
   (when sessions
     (let ((ecc-space--closing t))
       (mapc #'ecc-kill sessions)))
-  (ecc-worktree--forget-space root))
+  (ecc-space-forget root))
 
 (defun ecc-worktree--removed (path)
   "Say that the worktree PATH is gone.
@@ -294,7 +281,7 @@ before the fact, not tidied up after."
                        (format " (%d open buffer%s will be left pointing at \
 deleted files)"
                                open (if (= 1 open) "" "s")))))
-        (ecc-worktree--forget-space root)
+        (ecc-space-forget root)
         (ecc-worktree-remove root)
         (ecc-worktree--removed root)
         root))))
@@ -321,7 +308,7 @@ worktree, is left out of the question."
       ;; would leave the user with whichever arrived last.
       (let ((names (mapcar #'ecc-worktree--name roots)))
         (dolist (root roots)
-          (ecc-worktree--forget-space root)
+          (ecc-space-forget root)
           (ecc-worktree-remove root))
         (message "Removed %s" (string-join names ", ")))
       roots)))
@@ -339,7 +326,7 @@ model, and the question itself waits for a timer.
 Nothing is offered for a session that belongs to nobody -- a recording
 being read, the usage probe, an inline question -- nor while
 `ecc-space--closing\=' says a command is stopping a group of its own."
-  (when (and (not (bound-and-true-p ecc-space--closing))
+  (when (and (not ecc-space--closing)
              (ecc-model-own-session-p session))
     (let ((root (ecc-window-session-project session)))
       (when (and root
@@ -860,13 +847,6 @@ of %s" unsettled branch)))))
          (cons nil (format "%s, and gh failed: %s" unsettled
                            (error-message-string err))))))))
 
-(defun ecc-worktree--space-p (root)
-  "Return non-nil when the worktree ROOT has a Space.
-Nil under `classic', where `ecc-space' is not loaded at all."
-  (when ecc-use-spaces
-    (require 'ecc-space)
-    (ecc-space-at-p root)))
-
 (defun ecc-worktree--busy (session)
   "Return what SESSION is in the middle of, or nil when it may be stopped.
 This is `ecc-model-busy\=', the one definition of a busy session."
@@ -959,7 +939,7 @@ is gone."
                           :strangers (ecc-worktree--strangers root sessions)
                           :buffers buffers
                           :modified (seq-filter #'buffer-modified-p buffers)
-                          :space (ecc-worktree--space-p root)))
+                          :space (ecc-space-at-p root)))
              (tip (ecc-git-output root "rev-parse" "HEAD"))
              (merged (if tip
                          (ecc-worktree-merged
@@ -1046,7 +1026,7 @@ FACTS is what `ecc-worktree--inspect' found."
                                   (mapconcat #'buffer-name
                                              (plist-get facts :modified) ", "))
                         "")))
-            (when (and facts ecc-use-spaces)
+            (when facts
               (format "  Space: %s" (if (plist-get facts :space) "yes" "no")))
             (format "  removable: %s"
                     (if refusal (format "no -- %s" refusal) "yes"))))

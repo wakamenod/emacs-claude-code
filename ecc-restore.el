@@ -74,12 +74,6 @@
 (require 'ecc-chat)
 (require 'ecc-display)
 
-(declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
-(declare-function ecc-space-of-root "ecc-space" (root))
-(declare-function ecc-space-select "ecc-space" (space))
-;; Not required: with `ecc-use-spaces\=' off nothing reaches `ecc-space\='.
-(defvar ecc-space-always-session)
-
 (defvar ecc-restore-file (expand-file-name "ecc-state.eld" user-emacs-directory)
   "File the open sessions and Spaces are saved in, as Lisp data.
 A variable rather than a setting: where a package keeps its state is
@@ -137,18 +131,14 @@ session runs (`ecc-proc-send-rename\=')."
                (list :rename-pending t))))
 
 (defun ecc-restore--space-roots ()
-  "Return the roots of the Spaces with a tab, the selected frame first.
-Nothing under `ecc-use-spaces' nil, where nothing may reach `ecc-space',
-and nothing when it has not been loaded: then there are no tabs of ours,
-and loading it to find that out would be loading it for nothing."
-  (when (and ecc-use-spaces (featurep 'ecc-space))
-    (let ((roots nil))
-      (dolist (frame (cons (selected-frame)
-                           (delq (selected-frame) (frame-list))))
-        (dolist (root (ecc-space-tab-roots frame))
-          (unless (member root roots)
-            (push root roots))))
-      (nreverse roots))))
+  "Return the roots of the Spaces with a tab, the selected frame first."
+  (let ((roots nil))
+    (dolist (frame (cons (selected-frame)
+                         (delq (selected-frame) (frame-list))))
+      (dolist (root (ecc-space-tab-roots frame))
+        (unless (member root roots)
+          (push root roots))))
+    (nreverse roots)))
 
 (defun ecc-restore-state ()
   "Return what is open now, as it is saved.
@@ -390,23 +380,21 @@ saved as `:rename-pending\=' is one the CLI is still to be told."
 (defun ecc-restore--spaces (roots)
   "Open a Space for each of ROOTS, in order, starting nothing.
 Returns the roots that were opened and the ones that are gone, as a
-cons.  `ecc-space-always-session' is off throughout: a Space that had
-no session had none, and one that had them has them back already.  The
-sessions are laid out the way a Space lays them out, and the first
-Space is the one left showing."
-  (require 'ecc-space)
-  (let ((ecc-space-always-session nil)
-        (opened nil)
+cons.  Showing a Space starts nothing (`ecc-space--select-tab'): a
+Space that had no session had none, and one that had them has them back
+already.  The sessions are laid out the way a Space lays them out, and
+the first Space is the one left showing."
+  (let ((opened nil)
         (gone nil))
     (dolist (root roots)
       (if (file-directory-p root)
-          (progn (ecc-space-select (ecc-space-of-root root))
+          (progn (ecc-space--select-tab (ecc-space-of-root root))
                  (push root opened))
         (push root gone)))
     (setq opened (nreverse opened))
     ;; The first of them is the one left showing.
     (when opened
-      (ecc-space-select (ecc-space-of-root (car opened))))
+      (ecc-space--select-tab (ecc-space-of-root (car opened))))
     (cons opened (nreverse gone))))
 
 ;;;###autoload
@@ -418,8 +406,7 @@ is open already is left as it is, so running this twice brings nothing
 back twice, and one whose directory is gone is skipped and said so.
 
 The Spaces are opened in the order their tabs were in, with the
-sessions side by side as a Space lays them out; under `ecc-use-spaces'
-nil only the sessions come back.
+sessions side by side as a Space lays them out.
 
 FILE is the state to read, `ecc-restore-file' by default.  To do this
 every time Emacs starts, call it from the init file."
@@ -444,13 +431,10 @@ every time Emacs starts, call it from the init file."
                      skipped)))))
     (when restored
       (ecc--enable-session-modes))
-    (if ecc-use-spaces
-        (let ((result (ecc-restore--spaces (plist-get state :spaces))))
-          (setq spaces (car result))
-          (dolist (root (cdr result))
-            (push (format "%s (gone)" (abbreviate-file-name root)) skipped)))
-      (when restored
-        (ecc-display-session (car restored))))
+    (let ((result (ecc-restore--spaces (plist-get state :spaces))))
+      (setq spaces (car result))
+      (dolist (root (cdr result))
+        (push (format "%s (gone)" (abbreviate-file-name root)) skipped)))
     (when (null file)
       (setq ecc-restore--previous nil
             ecc-restore--owned t))

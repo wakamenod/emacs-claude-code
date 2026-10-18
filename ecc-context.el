@@ -46,6 +46,7 @@
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-window)
+(require 'ecc-display)
 
 ;; Diagnostics are read from whichever checker the user runs; neither is
 ;; a dependency of this package.  FILEONLY: Emacs 29.1's flymake defines
