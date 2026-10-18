@@ -97,6 +97,16 @@ Verified against **Claude Code CLI 2.1.290**.
   Resuming a session no longer loads `ecc-review` on its own before it
   takes the baseline, which has come from `ecc-git` since that module
   was added.
+- Approving a plan request is a permission answer, so it moves from
+  `ecc-plan.el` to `ecc-perm.el` with the option it reads.
+  `ecc-plan-default-mode` keeps its name and means what it meant.
+  `ecc-plan-approve-request` is `ecc-perm-approve-plan-request`, and the
+  old name stays as an obsolete alias. The files of a session's project,
+  which the `@` completion offers and `RET` on a path searches, come from
+  `ecc-visit.el`: `ecc-prompt-project-files` is `ecc-visit-project-files`.
+  Neither `ecc-perm.el` nor `ecc-visit.el` declares a function of a module
+  that requires it, or loads one when it is asked. A plan is approved, and
+  a path is found, as before.
 
 ### Fixed
 
