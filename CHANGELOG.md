@@ -75,6 +75,13 @@ Verified against **Claude Code CLI 2.1.290**.
   25. The keys are unchanged, since every session buffer is made with the
   whole package loaded, and a `c` or `e` a user binds in
   `ecc-request-section-map` still wins over the review's.
+- The Capabilities buffer -- `ecc-capabilities-show`, `ecc-capabilities-mode`
+  and the rest of `ecc-capabilities-*` -- is in a file of its own,
+  `ecc-capabilities.el`, rather than in `ecc-dashboard.el`. Every name,
+  key and line it draws is as before. `C` in the dashboard is
+  `ecc-dashboard-capabilities`, which shows the session of the row at
+  point, so that the Capabilities buffer no longer asks the dashboard
+  which session it is about.
 
 ### Fixed
 
@@ -91,6 +98,11 @@ Verified against **Claude Code CLI 2.1.290**.
   the command, the output and the whole diff. Every other tool call, and
   a Bash call that changed no file, is drawn as before, its inputs of
   several lines cut as 0.4.2 cut them.
+- `C` in `ecc-menu`, and `M-x ecc-capabilities-show`, show the
+  Capabilities of the session they are called from, or of the most recent
+  one. Since 0.1.0 they stopped at "No session on this line" anywhere but
+  on a row of the dashboard, as the session was asked of the dashboard
+  first.
 
 ## [0.4.5] - 2026-10-14
 

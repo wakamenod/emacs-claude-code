@@ -16,6 +16,7 @@
 (require 'ecc-review)
 (require 'ecc-plan)
 (require 'ecc-dashboard)
+(require 'ecc-capabilities)
 (require 'ecc-usage)
 (require 'ecc-btw)
 (require 'ecc-inline)
