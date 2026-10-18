@@ -378,6 +378,56 @@ several times a second, moving down onto one with `C-n' was impossible."
         (ecc-sidebar-kill-session)
         (should (eq killed (nth 1 sessions)))))))
 
+(ert-deftest ecc-sidebar-test-r-resumes-the-session-at-point ()
+  "`r' resumes the session of its row, and \\`C-u' `r' forks it.
+It is `ecc-resume' underneath, as \\`C-c c r' is."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (let ((resumed nil))
+      (cl-letf (((symbol-function 'ecc-resume)
+                 (lambda (session &optional fork)
+                   (push (list session fork) resumed))))
+        (ecc-sidebar-test--goto "· two")
+        (call-interactively #'ecc-sidebar-resume)
+        (should (equal resumed (list (list (nth 1 sessions) nil))))
+        (setq resumed nil)
+        (let ((current-prefix-arg '(4)))
+          (call-interactively #'ecc-sidebar-resume))
+        (should (eq (caar resumed) (nth 1 sessions)))
+        (should (cadar resumed))
+        ;; A row that is not a session resumes nothing.
+        (setq resumed nil)
+        (goto-char (point-min))
+        (should-error (call-interactively #'ecc-sidebar-resume)
+                      :type 'user-error)
+        (should-not resumed)))))
+
+(ert-deftest ecc-sidebar-test-R-renames-the-session-at-point ()
+  "`R' renames the session of its row, and its buffer follows.
+The prompt offers the name it has, and an empty name is refused."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (let ((session (nth 1 sessions))
+          (offered nil))
+      (ecc-session-ensure-buffer session)
+      (ecc-sidebar-test--goto "· two")
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (_prompt &optional initial &rest _)
+                   (setq offered initial)
+                   "renamed")))
+        (call-interactively #'ecc-sidebar-rename))
+      (should (equal offered "two"))
+      (should (equal (ecc-session-name session) "renamed"))
+      (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: renamed*"))
+      ;; The row is drawn again under the new name.
+      (should (string-search "renamed" (ecc-sidebar-test--text)))
+      (ecc-sidebar-test--goto "renamed")
+      (should-error (ecc-sidebar-rename "") :type 'user-error)
+      (should-error (ecc-sidebar-rename "   ") :type 'user-error)
+      (should (equal (ecc-session-name session) "renamed"))
+      (goto-char (point-min))
+      (should-error (ecc-sidebar-rename "other") :type 'user-error))))
+
 (ert-deftest ecc-sidebar-test-a-answers-the-session-at-point ()
   "`a' allows what the session of the row is waiting on, not somebody else's."
   (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
@@ -567,6 +617,12 @@ things depending on which list was in front."
   (should (eq (lookup-key ecc-sidebar-mode-map (kbd "K")) #'ecc-sidebar-remove-worktree))
   (should (eq (lookup-key ecc-sidebar-mode-map (kbd "X")) #'ecc-sidebar-close-space))
   (should-not (lookup-key ecc-sidebar-mode-map (kbd "x"))))
+
+(ert-deftest ecc-sidebar-test-r-and-R-are-bound ()
+  "`r' resumes and `R' renames, as they do under \\`C-c c'.
+`ecc-global-map-test' holds the global keys to the same commands."
+  (should (eq (lookup-key ecc-sidebar-mode-map (kbd "r")) #'ecc-sidebar-resume))
+  (should (eq (lookup-key ecc-sidebar-mode-map (kbd "R")) #'ecc-sidebar-rename)))
 
 (provide 'ecc-sidebar-test)
 

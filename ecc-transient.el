@@ -320,13 +320,16 @@ the prefix argument."
 
 ;;;###autoload (autoload 'ecc-resume-menu "ecc-transient" nil t)
 (transient-define-prefix ecc-resume-menu ()
-  "Resume a session, forking the conversation or not.
+  "Resume a session, forking the conversation or not, or delete a recording.
 A prefix of its own for the reason `ecc-allow-all-menu\=' is: --fork sat
 at the head of the Session column and read as though Start and Kill took
-it too."
+it too.  Deleting a recording is a group of its own below for the same
+reason: --fork is nothing to it."
   ["Resume"
    ("-f" "Fork the conversation" "--fork")
    ("r" ecc-menu-resume)]
+  ["Recording"
+   ("d" "Delete a recording" ecc-delete-recording)]
   (interactive)
   (ecc--require-package)
   (transient-setup 'ecc-resume-menu))

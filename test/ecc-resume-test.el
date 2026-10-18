@@ -351,6 +351,114 @@ and the minibuffer is the only place the choice is visible."
             (should (eq session (car resumed)))
             (should (eq (and prefix t) (and (cadr resumed) t)))))))))
 
+;;;; Deleting a recording
+
+(defconst ecc-resume-test--id "24a1aa86-d53f-4457-b09e-4f4caf450f03"
+  "The session id of the recording `ecc-resume-test--with-recordings' lays out.")
+
+(ert-deftest ecc-resume-test-delete-recording-asks-first ()
+  "The recording goes after a yes, and stays after a no.
+What is asked names the session and the file, so that what is about to
+go is seen: a single candidate is taken without the choice shown.  A
+recording no session of this Emacs holds is named by its title, as the
+picker names it."
+  (ecc-resume-test--with-recordings file
+    (let ((title (alist-get 'title (ecc-history-scan-file file)))
+          asked)
+      (should title)
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (prompt) (setq asked prompt) nil)))
+        (ecc-delete-recording ecc-resume-test--id))
+      (should (equal asked (format "Delete the recording of %s (%s)? "
+                                   title (abbreviate-file-name file))))
+      (should (file-exists-p file))
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
+        (ecc-delete-recording ecc-resume-test--id))
+      (should-not (file-exists-p file)))))
+
+(ert-deftest ecc-resume-test-delete-recording-always-asks-which ()
+  "From the buffer of a stopped session the choice is still asked for.
+`ecc-read-session' takes that session without a question, which is the
+R offered after an exit; a delete cannot be undone, so it asks.  The
+session keeps its buffer once its recording is gone."
+  (ecc-resume-test--with-recordings file
+    (let* ((session (ecc-model-create-session
+                     :id ecc-resume-test--id :name "local"
+                     :project-root (ecc-resume-test--cwd file)))
+           (other (ecc-model-create-session
+                   :name "other" :project-root (ecc-resume-test--cwd file)))
+           asked)
+      (unwind-protect
+          (with-temp-buffer
+            (let ((ecc-render--session session))
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (prompt table &rest _)
+                           (push prompt asked)
+                           (seq-find (lambda (label) (string-search "local" label))
+                                     (all-completions "" table))))
+                        ((symbol-function 'yes-or-no-p)
+                         (lambda (prompt) (push prompt asked) t)))
+                (call-interactively #'ecc-delete-recording)))
+            (should (equal (nreverse asked)
+                           (list "Delete recording: "
+                                 (format "Delete the recording of local (%s)? "
+                                         (abbreviate-file-name file)))))
+            (should-not (file-exists-p file))
+            (should (eq session (ecc-model-session ecc-resume-test--id))))
+        (ecc-test-cleanup-session session)
+        (ecc-test-cleanup-session other)))))
+
+(ert-deftest ecc-resume-test-delete-recording-refuses-a-running-session ()
+  "The recording of a session running in this Emacs is not deleted.
+Its CLI is still writing to it."
+  (ecc-resume-test--with-recordings file
+    (let* ((session (ecc-model-create-session
+                     :id ecc-resume-test--id :name "local"
+                     :project-root (ecc-resume-test--cwd file)))
+           (process (start-process "ecc-resume-test" nil "sleep" "60")))
+      (setf (ecc-session-process session) process)
+      (unwind-protect
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (_) (error "It asked about a running session"))))
+            (let ((err (should-error (ecc-delete-recording ecc-resume-test--id)
+                                     :type 'user-error)))
+              (should (string-search "local" (cadr err))))
+            (should (file-exists-p file)))
+        (delete-process process)
+        (ecc-test-cleanup-session session)))))
+
+(ert-deftest ecc-resume-test-delete-recording-refuses-another-process ()
+  "A recording the registry says another process runs is not deleted.
+A terminal `claude' or another Emacs is still writing to it, and unlike
+a resume there is no going on anyway."
+  (ecc-resume-test--with-recordings file
+    (with-temp-file (expand-file-name "4242.json" ecc-registry-directory)
+      (insert (ecc--json-write
+               `((pid . 4242) (sessionId . ,ecc-resume-test--id)
+                 (name . "elsewhere") (status . "busy")))))
+    (let ((ecc-registry-check-process nil)
+          (title (alist-get 'title (ecc-history-scan-file file))))
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (_) (error "It asked about a running recording"))))
+        (let ((err (should-error (ecc-delete-recording ecc-resume-test--id)
+                                 :type 'user-error)))
+          (should (equal (cadr err)
+                         (format "%s is running in another process (PID 4242); stop it before deleting its recording"
+                                 title)))))
+      (should (file-exists-p file)))))
+
+(ert-deftest ecc-resume-test-delete-recording-refuses-no-recording ()
+  "A session with nothing recorded says so."
+  (ecc-resume-test--with-recordings file
+    (let ((session (ecc-model-create-session
+                    :name "fresh" :project-root (ecc-resume-test--cwd file))))
+      (unwind-protect
+          (let ((err (should-error (ecc-delete-recording (ecc-session-id session))
+                                   :type 'user-error)))
+            (should (equal (cadr err) "fresh has no recording"))
+            (should (file-exists-p file)))
+        (ecc-test-cleanup-session session)))))
+
 (provide 'ecc-resume-test)
 
 ;;; ecc-resume-test.el ends here

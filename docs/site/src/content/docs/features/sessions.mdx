@@ -47,6 +47,8 @@ Two processes writing to one session ID branch its recording, and the CLI does n
 
 Recordings live under `~/.claude/projects`, so conversations from the terminal client are listed too. `C-c c h` opens a recording to read without starting a process; `r` in it resumes it. When a CLI process dies, ecc offers to resume it.
 
+`d` in the resume menu (`C-c c ? r d`), or `M-x ecc-delete-recording`, deletes a recording from disk. It lists the conversations `C-c c r` lists, always asks which one, then asks again, naming the session and its file. It refuses a session that is running, in this Emacs or in another process; stop it first. A stopped session keeps its buffer, with nothing left to resume.
+
 ## Restarting the CLI
 
 `R` in a session buffer, or `S` in the menu, stops the session's CLI and starts it again on the same conversation, in the same buffer. Use it when the CLI stops answering, or to pick up changed Claude Code settings, MCP servers or plugins. ecc asks first and keeps the permission mode. The session has to be idle: with a turn running, a request waiting or prompts queued, interrupt it first with `C-c C-z`. With a background task still running, wait for it to finish. On a stopped session, `R` resumes it.

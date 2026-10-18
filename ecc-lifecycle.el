@@ -454,34 +454,79 @@ to sort them by name or by length."
                      (cycle-sort-function . identity))
         (complete-with-action action labels string predicate)))))
 
+(defun ecc--read-session-id (&optional prompt)
+  "Ask with PROMPT for a session, and return its id.
+The sessions of this Emacs and the recordings of the current project
+are offered, and the recordings of every project when this one has
+none.  A single candidate is taken without asking."
+  (let* ((root (ecc-project-root))
+         (candidates (or (ecc--session-candidates root)
+                         (ecc--session-candidates))))
+    (unless candidates
+      (user-error "No session and no recorded conversation"))
+    (cdr (if (= 1 (length candidates))
+             (car candidates)
+           (assoc (completing-read (or prompt "Session: ")
+                                   (ecc--session-table candidates)
+                                   nil t)
+                  candidates)))))
+
 (defun ecc-read-session (&optional prompt)
   "Return a session to work on, asking with PROMPT when there is a choice.
 The session of the current buffer wins, but only once it has stopped:
 that is the R pressed on an exit, and asking there would be a question
 with one answer.  A buffer whose session is still running is asked in
 like any other, so that the other sessions can be reached from inside
-one.  Otherwise the sessions of this Emacs and the recordings of the
-current project are offered, and the recordings of every project when
-this one has none.  A recording that is picked is read back into an
-archived session."
+one.  Otherwise the choice is `ecc--read-session-id\='s.  A recording
+that is picked is read back into an archived session."
   (or (when-let* ((session (ecc-window-buffer-session)))
         (and (not (process-live-p (ecc-session-process session)))
              session))
-      (let* ((root (ecc-project-root))
-             (candidates (or (ecc--session-candidates root)
-                             (ecc--session-candidates)))
-             (choice (progn
-                       (unless candidates
-                         (user-error "No session and no recorded conversation"))
-                       (if (= 1 (length candidates))
-                           (car candidates)
-                         (let ((label (completing-read
-                                       (or prompt "Session: ")
-                                       (ecc--session-table candidates)
-                                       nil t)))
-                           (assoc label candidates))))))
-        (or (ecc-model-session (cdr choice))
-            (ecc-history-session (cdr choice))))))
+      (let ((id (ecc--read-session-id prompt)))
+        (or (ecc-model-session id)
+            (ecc-history-session id)))))
+
+;;;###autoload
+(defun ecc-delete-recording (session-id)
+  "Delete the recording of SESSION-ID, after asking.
+Interactively the session is chosen among the ones `ecc-resume\=' offers,
+and always chosen: the session of the current buffer is not taken for
+granted, as it is for a resume, since what is about to go cannot be
+brought back.
+
+The question names the session and the file, as in
+  Delete the recording of docs (~/.claude/projects/.../3f2a....jsonl)?
+since a single candidate is taken without the choice being shown.  The
+name is the session\='s in this Emacs, or the title the picker shows for
+a recording, and the id only when the recording has none.
+
+A session running in this Emacs is refused, and so is one the registry
+says another process is running -- a terminal `claude\=' or another
+Emacs -- since that CLI is still writing to the file.  There is no
+going on anyway, as there is for a resume: a deleted recording cannot
+be brought back.  A session of this Emacs that has stopped keeps its
+buffer and its transcript, but resuming it afterwards has nothing to
+resume from."
+  (interactive (list (ecc--read-session-id "Delete recording: ")))
+  (let* ((session (ecc-model-session session-id))
+         (file (ecc-history-file session-id))
+         (name (cond (session (ecc-session-name session))
+                     ((and file (alist-get 'title (ecc-history-scan-file file))))
+                     (t session-id))))
+    (when (and session (process-live-p (ecc-session-process session)))
+      (user-error "%s is running; stop it before deleting its recording" name))
+    (when-let* ((entry (ecc-registry-session session-id)))
+      (user-error "%s is running in another process%s; stop it before deleting its recording"
+                  name (if-let* ((pid (alist-get 'pid entry)))
+                           (format " (PID %s)" pid)
+                         "")))
+    (unless file
+      (user-error "%s has no recording" name))
+    (let ((what (format "the recording of %s (%s)"
+                        name (abbreviate-file-name file))))
+      (when (yes-or-no-p (format "Delete %s? " what))
+        (delete-file file)
+        (message "Deleted %s" what)))))
 
 (defun ecc--offer-resume (session status)
   "Offer to resume SESSION, whose CLI stopped with STATUS.

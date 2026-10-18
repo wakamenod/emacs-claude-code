@@ -68,6 +68,7 @@
 (require 'ecc-answer)
 (require 'ecc-perm)
 (require 'ecc-lifecycle)
+(require 'ecc-session)
 
 (defconst ecc-sidebar-buffer-name "*ecc-sidebar*"
   "Name of the sidebar buffer.")
@@ -572,6 +573,33 @@ The redraw is `ecc-worktree-removed-hook\\=''s, which every removal runs
       (ecc-kill session)
       (ecc-sidebar-redraw))))
 
+(defun ecc-sidebar-resume (&optional fork)
+  "Resume the session of the row at point, forking it when FORK is non-nil.
+What \\`C-c c r' does, on the session the row stands for: a stopped one
+is started again with --resume and a running one is gone to.
+Interactively, a prefix argument forks it into a new conversation."
+  (interactive "P")
+  (ecc-resume (or (ecc-sidebar--session-at-point)
+                  (user-error "No session on this line"))
+              fork))
+
+(defun ecc-sidebar-rename (name)
+  "Rename the session of the row at point to NAME.
+What \\`C-c c R' does, on the session the row stands for: the prompt
+offers the name it has, and `ecc-rename-session' renames its buffers
+and tells the CLI."
+  (interactive
+   (list (read-string "New name: "
+                      (ecc-session-name
+                       (or (ecc-sidebar--session-at-point)
+                           (user-error "No session on this line"))))))
+  (let ((session (or (ecc-sidebar--session-at-point)
+                     (user-error "No session on this line"))))
+    (when (string-empty-p (string-trim name))
+      (user-error "The name may not be empty"))
+    (ecc-rename-session session name)
+    (ecc-sidebar-redraw)))
+
 (defun ecc-sidebar--oldest-request ()
   "Return the request the session at point is waiting on.
 `ecc-answer-session-request\\=' is what says which, here and in the
@@ -616,9 +644,13 @@ from here but not answered."
     (define-key map (kbd "TAB") #'ecc-sidebar-toggle-children)
     (define-key map (kbd "c") #'ecc-sidebar-start-session)
     (define-key map (kbd "W") #'ecc-sidebar-start-worktree)
-    ;; `k' stops a session, `K' removes a worktree and `X' closes a
-    ;; Space: each a step larger than the one before, spelled as the
-    ;; menu spells them (`X' there, `k' in `ecc-worktree-menu').
+    ;; `r' resumes and `R' renames the session of the row, as `C-c c r'
+    ;; and `C-c c R' do.  `k' stops a session, `K' removes a worktree
+    ;; and `X' closes a Space: each a step larger than the one before,
+    ;; spelled as the menu spells them (`X' there, `k' in
+    ;; `ecc-worktree-menu').
+    (define-key map (kbd "r") #'ecc-sidebar-resume)
+    (define-key map (kbd "R") #'ecc-sidebar-rename)
     (define-key map (kbd "k") #'ecc-sidebar-kill-session)
     (define-key map (kbd "K") #'ecc-sidebar-remove-worktree)
     (define-key map (kbd "X") #'ecc-sidebar-close-space)
