@@ -4209,6 +4209,18 @@ opened."
             (ecc-review-direct-refresh-headers control)))
         control))))
 
+(cl-defmethod ecc-review--open ((_style (eql ediff)) session paths)
+  "Open the review of what SESSION changed, PATHS alone if given, in ediff.
+Outside git there are no two trees to lay side by side: the review is
+built from what the session recorded, and what that gives is a diff."
+  (if (ecc-git-root (or (ecc-session-project-root session) default-directory))
+      (ecc-review-ediff-buffer session paths)
+    (cl-call-next-method)))
+
+(cl-defmethod ecc-review--open-range ((_style (eql ediff)) session range root paths)
+  "Open the review of ROOT against RANGE for SESSION, PATHS alone, in ediff."
+  (ecc-review-ediff-range-buffer session range root paths))
+
 (defun ecc-review-ediff-buffer (session &optional paths)
   "Open everything SESSION changed as one ediff and return the control buffer.
 PATHS restricts it to those files.  This is `ecc-review-buffer\\=' laid
