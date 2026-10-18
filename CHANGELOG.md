@@ -199,6 +199,19 @@ Verified against **Claude Code CLI 2.1.290**.
   `ecc-btw-chat-map`, which it hangs under `ecc-chat-mode-map`, and
   `ecc-chat.el` no longer requires `ecc-btw`. A `C-c C-b` of your own in
   `ecc-chat-mode-map` still wins.
+- The keys of a diff review that belong to the modules above
+  `ecc-review.el` -- `s` and `/` for the files pane, `T`, `t` and `M` for
+  talking to the session, and `]`, `[` and `C-c C-a` for a pull request
+  read a commit at a time -- are bound in keymaps of those modules,
+  `ecc-review-files-review-map`, `ecc-review-talk-review-map` and
+  `ecc-review-pr-review-map`, which each hangs under `ecc-review-mode-map`
+  rather than in that map itself. `ecc-review.el` no longer autoloads a
+  command of `ecc-review-files`, `ecc-review-talk` or `ecc-review-pr`.
+  `ecc-review-mode-map` names `diff-mode-map` as its parent itself, so
+  `M-n`, `M-p` and the other keys of `diff-mode` stay under the modules'.
+  Nothing changes for the user, except that one of those keys a user binds
+  in `ecc-review-mode-map` once `ecc-review` is loaded now survives the
+  three modules loading, as in the chat maps.
 - What a Space is and how a session is shown in one are in
   `ecc-display.el`, below every module that shows a session: the
   `ecc-space` struct and `ecc-space-list`, `-of-root`, `-at-p`,
