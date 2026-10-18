@@ -54,6 +54,7 @@
 (require 'ecc-proc)
 (require 'ecc-dispatch)
 (require 'ecc-registry)
+(require 'ecc-peer)
 (require 'ecc-window)
 
 (declare-function ecc-render-refresh "ecc-render" (session))
@@ -266,7 +267,12 @@ PROMPT is what the message opens a turn with, or nil."
   (cond
    (prompt
     (ecc-history--close-turn session time)
-    (let ((turn (ecc-model-begin-turn session prompt)))
+    (let ((turn (ecc-model-begin-turn
+                 session prompt
+                 ;; A message another session sent is drawn as one, and
+                 ;; PROMPT is its body already.
+                 (when-let* ((peer (ecc-protocol-peer-message message)))
+                   (ecc-peer-sender peer)))))
       (when time (setf (ecc-turn-start-time turn) time))))
    ((equal (alist-get 'type message) "system")
     (pcase (alist-get 'subtype message)

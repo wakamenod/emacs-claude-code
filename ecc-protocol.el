@@ -504,6 +504,90 @@ no `origin' at all says nothing either way and is not judged here."
   (or (ecc-protocol-command-tag text "summary")
       (ecc-protocol-command-tag text "status")))
 
+;;;; Messages from another session
+
+;; Every running CLI listens on a socket of its own, which it names in
+;; its session file as `messagingSocketPath' (/tmp/cc-socks/PID.sock),
+;; and the model of another session reaches it with the built-in
+;; SendMessage, addressed `uds:' plus that path.  The receiving CLI
+;; queues the message itself and starts a turn with it, in a session
+;; Emacs runs as much as in one in a terminal: Emacs sends nothing.
+;;
+;; What arrives (CLI 2.1.296, confirmed 2026-10-17 on the stream of a
+;; stream-json client and in recordings back to 2.1.286) is a user
+;; message whose text is
+;;
+;;   Another Claude session sent a message:
+;;   <cross-session-message from="uds:/tmp/cc-socks/PID.sock"
+;;    from-name="NAME" from-mode="prompting">
+;;   BODY
+;;   </cross-session-message>
+;;
+;;   This came from another Claude session -- ...
+;;
+;; with the paragraph after the tag addressed to the model, and with
+;; `origin' {kind "peer", from, name, fromMode, body, verifiedPeerPid}
+;; beside it.  The stream marks it `isReplay' and `isSynthetic'; the
+;; recording marks it `isMeta'.  A message that comes while a turn runs
+;; is not a prompt at all: the recording keeps it as an `attachment'
+;; the turn absorbed, which is bookkeeping here.
+
+(defconst ecc-protocol-peer-message-regexp
+  (concat "\\`[ \t\n]*\\(?:Another Claude session sent a message[^\n]*\n\\)?"
+          "<cross-session-message\\([^>]*\\)>\n?"
+          "\\(\\(?:.\\|\n\\)*\\)\n?</cross-session-message>")
+  "A message another session sent, as the text of the prompt it arrives as.
+It has to open the text: a prompt that quotes the tag is not one.")
+
+(defun ecc-protocol--peer-attribute (attributes name)
+  "Return the attribute NAME of the tag whose ATTRIBUTES are given, or nil."
+  (when (string-match (format "\\_<%s=\"\\([^\"]*\\)\"" (regexp-quote name))
+                      attributes)
+    (let ((value (match-string 1 attributes)))
+      (dolist (pair '(("&quot;" . "\"") ("&lt;" . "<") ("&gt;" . ">")
+                      ("&apos;" . "'") ("&amp;" . "&"))
+                    value)
+        (setq value (string-replace (car pair) (cdr pair) value))))))
+
+(defun ecc-protocol-peer-message-text (text)
+  "Return the message from another session that TEXT is, or nil.
+The answer is an alist of `from' (the `uds:' address it came from),
+`name' (the name of that session in the CLI), `mode' and `body'."
+  (when (and (stringp text)
+             (string-match ecc-protocol-peer-message-regexp text))
+    (let ((attributes (match-string 1 text))
+          (body (match-string 2 text)))
+      (list (cons 'from (ecc-protocol--peer-attribute attributes "from"))
+            (cons 'name (ecc-protocol--peer-attribute attributes "from-name"))
+            (cons 'mode (ecc-protocol--peer-attribute attributes "from-mode"))
+            (cons 'body (string-remove-suffix "\n" body))))))
+
+(defun ecc-protocol-peer-message (message)
+  "Return the message from another session that the user MESSAGE carries, or nil.
+The alist of `ecc-protocol-peer-message-text\='.  The `origin' says it
+outright; the text is read when there is none."
+  (when (equal (alist-get 'type message) "user")
+    (let ((origin (alist-get 'origin message)))
+      (if (equal (alist-get 'kind origin) "peer")
+          (let ((parsed (ecc-protocol-peer-message-text
+                         (ecc-protocol-history-text message)))
+                (field (lambda (key)
+                         (let ((value (alist-get key origin)))
+                           (and (stringp value) value)))))
+            (list (cons 'from (or (funcall field 'from)
+                                  (alist-get 'from parsed)))
+                  (cons 'name (or (funcall field 'name)
+                                  (alist-get 'name parsed)))
+                  (cons 'mode (or (funcall field 'fromMode)
+                                  (alist-get 'mode parsed)))
+                  (cons 'body (or (funcall field 'body)
+                                  (alist-get 'body parsed)
+                                  (ecc-protocol-history-text message)
+                                  ""))))
+        (unless origin
+          (ecc-protocol-peer-message-text
+           (ecc-protocol-history-text message)))))))
+
 (defun ecc-protocol-history-text (message)
   "Return the text content of the user MESSAGE of a history file, or nil.
 The blocks of a message that carries several are joined by newlines;
@@ -530,20 +614,26 @@ before it, nor what it printed was said to the model.  Neither is a
 notice the CLI injected (`ecc-protocol-injected-p\='), such as the one
 about background tasks left over from a previous process.
 
+A message another session sent is the exception: the CLI writes it
+in itself, but it starts a turn the way a prompt does, and what is
+returned for it is its body (`ecc-protocol-peer-message\=').
+
 This is the one place every reader of a recording asks, so a notice
 rejected here opens no turn, and is nobody\='s last prompt in the resume
 list, the dashboard, the paging index or the search."
-  (when (and (equal (alist-get 'type message) "user")
-             (not (eq (alist-get 'isMeta message) t))
-             (not (ecc-protocol-injected-p message))
-             (not (ecc-protocol-history-sidechain-p message)))
-    (let ((text (ecc-protocol-history-text message)))
-      (and text
-           (not (string-match-p ecc-protocol-command-output-regexp text))
-           (not (string-match-p ecc-protocol-command-name-regexp text))
-           (not (ecc-protocol-command-caveat-p text))
-           (not (ecc-protocol-task-notification-p text))
-           text))))
+  (unless (ecc-protocol-history-sidechain-p message)
+    (if-let* ((peer (ecc-protocol-peer-message message)))
+        (alist-get 'body peer)
+      (when (and (equal (alist-get 'type message) "user")
+                 (not (eq (alist-get 'isMeta message) t))
+                 (not (ecc-protocol-injected-p message)))
+        (let ((text (ecc-protocol-history-text message)))
+          (and text
+               (not (string-match-p ecc-protocol-command-output-regexp text))
+               (not (string-match-p ecc-protocol-command-name-regexp text))
+               (not (ecc-protocol-command-caveat-p text))
+               (not (ecc-protocol-task-notification-p text))
+               text))))))
 
 (defun ecc-protocol-history-timestamp (message)
   "Return the `timestamp' of MESSAGE as an Emacs time, or nil."

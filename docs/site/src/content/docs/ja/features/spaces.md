@@ -83,7 +83,7 @@ worktree の最後のセッションが終わると、ecc はその worktree を
 
 ## 作業を worktree のセッションに引き渡す
 
-[Emacs の MCP サーバー](/emacs-claude-code/ja/start/installation/#mcp-サーバーの有効化)が有効（`ecc-mcp-enabled`）なら、セッションに worktree での作業を頼むと、モデルに `start_worktree_session` が示されます。モデルはブランチ名を決めて依頼文を書きます。Emacs は `HEAD` から worktree を作って Space として開き、そこでセッションを始めて依頼文を渡します。依頼文には、会話が触れたファイル、そのプラン、記録、未コミットの変更を書き足します。その作業は先にコミットするか、未コミットであることを依頼文に書いてください。
+[Emacs の MCP サーバー](/emacs-claude-code/ja/start/installation/#mcp-サーバーの有効化)が有効（`ecc-mcp-enabled`）なら、セッションに worktree での作業を頼むと、モデルに `start_worktree_session` が示されます。モデルはブランチ名を決めて依頼文を書きます。Emacs は `HEAD` から worktree を作って Space として開き、そこでセッションを始めて依頼文を渡します。依頼文には、会話が触れたファイル、そのプラン、記録、未コミットの変更を書き足します。作業を渡したセッションへ報告するためのアドレスも書き足します。その作業は先にコミットするか、未コミットであることを依頼文に書いてください。
 
 モデルが自分で worktree を作ろうとすると、Emacs はそのリクエストを拒否してツールを使うよう伝えます。worktree に触れた下書きには、ツールのことをモデルに思い出させる 1 行が添えられ、プロンプトの下に "1 line Emacs added" として折りたたんで表示されます。別の worktree でチェックアウト済みのブランチは拒否されるので、2 つのセッションが 1 つの worktree を共有することはありません。Lisp からは `ecc-worktree-delegate` で呼べます。
 

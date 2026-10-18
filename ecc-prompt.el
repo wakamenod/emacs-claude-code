@@ -68,6 +68,7 @@
 (require 'ecc-context)
 (require 'ecc-skill)
 (require 'ecc-lifecycle)
+(require 'ecc-peer)
 
 ;;;; Options
 
@@ -671,14 +672,17 @@ match by `ecc-prompt--next-reference'.")
   "The @ references that name what Emacs is looking at, not a path.
 `ecc-prompt--expansion' reads them from the source buffer.")
 
-(defun ecc-prompt--next-reference (text start)
+(defun ecc-prompt--next-reference (text start &optional sessions)
   "Return (BEG END TOKEN) for the first @ reference of TEXT from START.
 A special reference ends at its own name when what follows it is not
 ASCII, so that a particle written straight after it is not taken for the
 rest of a path: in a Japanese sentence `@region' is followed by a letter
 rather than a space, and the whole clause was being read as one filename.
 An ASCII letter does go on with the path, which leaves `@regions/list.py'
-the file it looks like."
+the file it looks like.
+
+A reference to a session, `@session:NAME', ends where the name of one
+of SESSIONS does (`ecc-prompt--session-reference-end')."
   (when (string-match ecc-prompt-reference-regexp text start)
     (let* ((beg (match-beginning 0))
            (body (match-string 1 text))
@@ -688,9 +692,54 @@ the file it looks like."
                             (or (= (length name) (length body))
                                 (>= (aref body (length name)) 128))))
                      ecc-prompt-special-references)))
-      (if special
-          (list beg (+ beg 1 (length special)) (concat "@" special))
-        (list beg (match-end 0) (match-string 0 text))))))
+      (cond
+       (special
+        (list beg (+ beg 1 (length special)) (concat "@" special)))
+       ((and (string-prefix-p ecc-peer-reference-prefix body)
+             (> (length body) (length ecc-peer-reference-prefix)))
+        (let ((end (ecc-prompt--session-reference-end text beg sessions)))
+          (list beg end (substring text beg end))))
+       (t
+        (list beg (match-end 0) (match-string 0 text)))))))
+
+(defun ecc-prompt--name-goes-on-p (text end)
+  "Return non-nil when the character at END of TEXT carries a name on.
+An ASCII letter, digit or one of `-_/<>' does; a full stop or a colon
+does only when one of those follows it, and is otherwise the end of a
+sentence.  Anything else -- a space, a particle written straight after
+the name -- ends it."
+  (and (< end (length text))
+       (let ((char (aref text end)))
+         (cond
+          ((>= char 128) nil)
+          ((string-match-p "[[:alnum:]_/<>-]" (string char)) t)
+          ((memq char '(?. ?:))
+           (ecc-prompt--name-goes-on-p text (1+ end)))))))
+
+(defun ecc-prompt--session-reference-end (text beg sessions)
+  "Return where the `@session:' reference at BEG of TEXT ends.
+SESSIONS are the names it can stand for, and the longest of them that
+TEXT names in full there is the one it does: a name is matched as it
+is, spaces and letters of any script included, and has to be followed
+by something that does not carry it on (`ecc-prompt--name-goes-on-p').
+When none is, the name is what runs from there up to a space or to a
+letter that is not ASCII, less the punctuation that ends a sentence --
+the name of a session that is not running, left as it stands."
+  (let* ((from (+ beg 1 (length ecc-peer-reference-prefix)))
+         (best nil))
+    (dolist (name sessions)
+      (let ((end (+ from (length name))))
+        (when (and (> (length name) 0)
+                   (<= end (length text))
+                   (string= name (substring text from end))
+                   (not (ecc-prompt--name-goes-on-p text end))
+                   (or (null best) (> end best)))
+          (setq best end))))
+    (or best
+        (let ((end from))
+          (while (ecc-prompt--name-goes-on-p text end)
+            (setq end (1+ end)))
+          (max end (1+ from))))))
 
 (defun ecc-prompt-split-reference (token)
   "Return (PATH START END) for the @ reference TOKEN.
@@ -712,13 +761,23 @@ that ends a sentence rather than a path is dropped."
         (format "```%s\n%s\n```" (plist-get context :language)
                 (plist-get context :text))))
 
-(defun ecc-prompt--expansion (token source &optional root)
+(defun ecc-prompt--expansion (token source &optional root session)
   "Return (LABEL . BLOCK) for the reference TOKEN, or nil to leave it alone.
 SOURCE is the buffer @region, @cursor and @diagnostics read from, and
 ROOT is where the CLI that reads the label stands.  A plain @path is
-left alone: the CLI resolves that one itself."
+left alone: the CLI resolves that one itself.
+
+`@session:NAME' is the one with a LABEL and no BLOCK: it names one of
+the sessions the prompt of SESSION can send a message to, with the
+address its process has now (`ecc-peer-label'), and there is nothing to
+quote.  A session that is not running is left alone."
   (pcase-let ((`(,path ,start ,end) (ecc-prompt-split-reference token)))
     (cond
+     ((string-prefix-p (concat "@" ecc-peer-reference-prefix) token)
+      (when-let* ((candidate (ecc-peer-resolve
+                              (substring token (1+ (length ecc-peer-reference-prefix)))
+                              session)))
+        (list (ecc-peer-label candidate))))
      ((equal path "region")
       ;; The region of SOURCE if it still has one, and otherwise
       ;; whatever region is left on the screen or was last seen: the
@@ -748,6 +807,10 @@ left alone: the CLI resolves that one itself."
       (when-let* ((context (ecc-context-file-range path start end)))
         (ecc-prompt--block context))))))
 
+(defun ecc-prompt--session-token-p (token)
+  "Return non-nil when TOKEN is a reference to a session."
+  (string-prefix-p (concat "@" ecc-peer-reference-prefix) token))
+
 (defvar ecc-prompt-last-attachments nil
   "Labels of the @ references the last expansion appended.")
 
@@ -757,25 +820,29 @@ A `@region' with no active region is one: it is sent as it stands, and
 `ecc-prompt-send' says so rather than leaving the user to find out from
 the answer.")
 
-(defun ecc-prompt-expand-references (text &optional source root)
+(defun ecc-prompt-expand-references (text &optional source root session)
   "Return TEXT with its @ references expanded.
 A line range, @region, @cursor and @diagnostics are replaced by a short
 label and their content is appended as a quote block; a plain @path is
 left for the CLI to resolve.  SOURCE is the buffer to read the region,
 the cursor and the diagnostics from, and ROOT is what the paths of the
 labels are relative to.  Two references to the same thing share the one
-block.  What was appended, and which special reference had nothing to
-append, are left in `ecc-prompt-last-attachments' and
-`ecc-prompt-last-skipped'."
-  (let ((source (or source (ecc-window-last-source-buffer)))
-        (blocks nil)
-        (skipped nil)
-        (result text)
-        (start 0)
-        (reference nil))
-    (while (setq reference (ecc-prompt--next-reference result start))
+block.  `@session:NAME' becomes a label alone, naming a session SESSION
+can send a message to.  What was appended, and which special reference
+had nothing to append or named no session that runs, are left in
+`ecc-prompt-last-attachments' and `ecc-prompt-last-skipped'."
+  (let* ((source (or source (ecc-window-last-source-buffer)))
+         (sessions (and (string-search (concat "@" ecc-peer-reference-prefix) text)
+                        (mapcar (lambda (candidate) (alist-get 'name candidate))
+                                (ecc-peer-candidates session))))
+         (blocks nil)
+         (skipped nil)
+         (result text)
+         (start 0)
+         (reference nil))
+    (while (setq reference (ecc-prompt--next-reference result start sessions))
       (pcase-let ((`(,beg ,finish ,token) reference))
-        (let ((expansion (ecc-prompt--expansion token source root)))
+        (let ((expansion (ecc-prompt--expansion token source root session)))
           (cond
            (expansion
             (setq result (concat (substring result 0 beg)
@@ -784,10 +851,12 @@ append, are left in `ecc-prompt-last-attachments' and
                   start (+ beg (length (car expansion))))
             ;; The label stands wherever it was written, but one quote
             ;; block says it: two @region in a sentence are one region.
-            (unless (member expansion blocks)
+            ;; A session is named and quotes nothing.
+            (unless (or (null (cdr expansion)) (member expansion blocks))
               (push expansion blocks)))
            (t
-            (when (member (substring token 1) ecc-prompt-special-references)
+            (when (or (member (substring token 1) ecc-prompt-special-references)
+                      (ecc-prompt--session-token-p token))
               (push token skipped))
             (setq start finish))))))
     (setq ecc-prompt-last-attachments (mapcar #'car (reverse blocks))
@@ -919,6 +988,15 @@ are not offered, but one typed out by hand is still accepted."
     ("@diagnostics" . "Send the diagnostics of this file"))
   "The @ references that are not files.")
 
+(defun ecc-prompt--session-completions (session)
+  "Return the sessions the prompt of SESSION can name, as (REFERENCE . CANDIDATE).
+REFERENCE is the `@session:NAME' to insert.  The registry is read once,
+when completion starts, rather than on every key."
+  (mapcar (lambda (candidate)
+            (cons (concat "@" ecc-peer-reference-prefix (alist-get 'name candidate))
+                  candidate))
+          (ecc-peer-candidates session)))
+
 (defun ecc-prompt-project-files (session)
   "Return the files of the project of SESSION, relative to its root.
 The project can spell that root another way: projectile names its files
@@ -983,8 +1061,9 @@ completion of `file' leaves them out."
 After `/', `~/', `./' or `../' the reference is a path, completed from
 anywhere a directory at a time, and a relative one from the directory
 the CLI of the session runs in, which is what it reads it against.
-Anything else is one of `ecc-prompt-at-specials' or a file of the
-project.  A remote path is not completed."
+Anything else is one of `ecc-prompt-at-specials', another session as
+`@session:NAME' (`ecc-peer-candidates'), or a file of the project.  A
+remote path is not completed."
   (when-let* ((session ecc-render--session)
               (region (ecc-chat-prompt-start)))
     (save-excursion
@@ -994,17 +1073,21 @@ project.  A remote path is not completed."
                  (path (buffer-substring-no-properties (1+ start) end)))
             (cond
              ((not (string-match-p ecc-prompt-at-path-regexp path))
-              (list start end
-                    (completion-table-dynamic
-                     (lambda (_string)
-                       (append (mapcar #'car ecc-prompt-at-specials)
-                               (mapcar (lambda (file) (concat "@" file))
-                                       (ecc-prompt-project-files session)))))
-                    :exclusive 'no
-                    :annotation-function
-                    (lambda (candidate)
-                      (when-let* ((doc (cdr (assoc candidate ecc-prompt-at-specials))))
-                        (concat "  " doc)))))
+              (let ((peers (ecc-prompt--session-completions session)))
+                (list start end
+                      (completion-table-dynamic
+                       (lambda (_string)
+                         (append (mapcar #'car ecc-prompt-at-specials)
+                                 (mapcar #'car peers)
+                                 (mapcar (lambda (file) (concat "@" file))
+                                         (ecc-prompt-project-files session)))))
+                      :exclusive 'no
+                      :annotation-function
+                      (lambda (candidate)
+                        (if-let* ((peer (cdr (assoc candidate peers))))
+                            (concat "  " (ecc-peer-annotation peer))
+                          (when-let* ((doc (cdr (assoc candidate ecc-prompt-at-specials))))
+                            (concat "  " doc)))))))
              ((ecc-prompt--remote-path-p path) nil)
              (t
               (list (1+ start) end
@@ -1033,7 +1116,7 @@ non-nil.  The paths of the labels are relative to the project of
 SESSION, which is where the CLI reading them stands."
   (let* ((root (ecc-window-project-root (ecc-session-project-root session)))
          (text (ecc-prompt-expand-references
-                (ecc-prompt-prepare-command session text) source root))
+                (ecc-prompt-prepare-command session text) source root session))
          (text (if attach
                    (concat text (or (ecc-context-block source root) ""))
                  text)))
@@ -1045,12 +1128,17 @@ The empty string when the prompt carried none: what Emacs attached is
 worth a word, because the labels of the quote blocks are all the user
 sees of it, and a `@region' that expanded to nothing is worth more
 ."
-  (concat
-   (when ecc-prompt-last-attachments
-     (format "; attached %s" (mapconcat #'identity ecc-prompt-last-attachments ", ")))
-   (when ecc-prompt-last-skipped
-     (format "; %s had nothing to send and went as it stands"
-             (mapconcat #'identity ecc-prompt-last-skipped ", ")))))
+  (let ((sessions (seq-filter #'ecc-prompt--session-token-p ecc-prompt-last-skipped))
+        (others (seq-remove #'ecc-prompt--session-token-p ecc-prompt-last-skipped)))
+    (concat
+     (when ecc-prompt-last-attachments
+       (format "; attached %s" (mapconcat #'identity ecc-prompt-last-attachments ", ")))
+     (when others
+       (format "; %s had nothing to send and went as it stands"
+               (mapconcat #'identity others ", ")))
+     (when sessions
+       (format "; %s named no session that can take a message, and went as it stands"
+               (mapconcat #'identity sessions ", "))))))
 
 (defun ecc-prompt-run-immediately (session command)
   "Answer COMMAND for SESSION at once when it is one that runs as it is chosen.

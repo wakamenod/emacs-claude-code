@@ -296,6 +296,51 @@ has it need not be named the way this package would have named it."
           (should (string-match-p "Not in this worktree" sent))
           (should (string-match-p "loose\\.txt" sent)))))))
 
+(ert-deftest ecc-worktree-test-handoff-brief-names-the-parent ()
+  "The session handed the work is told how to report to the one that handed it.
+The address is the one the parent's process has now, read from the
+registry, with the name ListAgents finds it by if that address goes."
+  (skip-unless (executable-find "git"))
+  (ecc-test-with-fake-session session
+    (ecc-worktree-test--with-directory directory
+      (ecc-worktree-test--repository directory)
+      (setf (ecc-session-project-root session) directory
+            (ecc-session-cwd session) directory)
+      (let* ((registry (make-temp-file "ecc-worktree-registry" t))
+             (ecc-registry-directory registry)
+             (ecc-registry-check-process nil)
+             (child (ecc-model-create-session :name "feat/x"))
+             (ecc-worktree-directory ".claude/worktrees")
+             (ecc-mcp--session-id (ecc-session-id session))
+             (sent nil))
+        (unwind-protect
+            (cl-letf (((symbol-function #'ecc-start)
+                       (lambda (&optional path &rest _)
+                         (ignore path)
+                         child))
+                      ((symbol-function #'ecc-proc-send-prompt)
+                       (lambda (_session text) (setq sent text) 'sent))
+                      ((symbol-function #'ecc-history-file) (lambda (_id) nil)))
+              (dolist (entry `((5150 ,(ecc-session-id session) "repo-a1")
+                               (5151 ,(ecc-session-id child) "repo-x-2c")))
+                (with-temp-file (expand-file-name (format "%d.json" (car entry))
+                                                  registry)
+                  (insert (ecc--json-write
+                           `((pid . ,(car entry)) (sessionId . ,(nth 1 entry))
+                             (name . ,(nth 2 entry))
+                             (messagingSocketPath
+                              . ,(format "/tmp/cc-socks/%d.sock" (car entry))))))))
+              (ecc-worktree-mcp-delegate "feat/x" "Finish the parser")
+              (should (string-match-p "Finish the parser" sent))
+              (should (string-search
+                       (format "the session that handed this over, `%s`, use SendMessage to `uds:/tmp/cc-socks/5150.sock`"
+                               (ecc-session-name session))
+                       sent))
+              (should (string-search "listed it as `repo-a1`" sent))
+              ;; Its own address is nothing it needs to be told.
+              (should-not (string-search "5151" sent)))
+          (delete-directory registry t))))))
+
 (ert-deftest ecc-worktree-test-handoff-facts-says-nothing-of-nothing ()
   "A session that touched nothing, in a clean tree, adds no section."
   (skip-unless (executable-find "git"))

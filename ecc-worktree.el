@@ -54,6 +54,7 @@
 (require 'ecc-proc)
 (require 'ecc-mcp)
 (require 'ecc-lifecycle)
+(require 'ecc-peer)
 (require 'ecc-chat)
 
 (declare-function ecc-space-forget "ecc-space" (root))
@@ -400,7 +401,11 @@ open for itself.
 The uncommitted changes are named rather than carried: a worktree is
 made from HEAD, so what has not been committed in the repository is not
 in the worktree, and a brief that leans on an edit that is not there
-sends the new session looking for it."
+sends the new session looking for it.
+
+Last comes where SESSION can be reached (`ecc-peer-parent-paragraph\='),
+so that the new session can report back without waiting to be written
+to first; it is left out when the registry has no socket for SESSION."
   (let* ((files (and session (ecc-model-files session)))
          (plans (and session (ecc-model-plan-files session)))
          (record (and session (ecc-history-file (ecc-session-id session))))
@@ -430,6 +435,8 @@ HEAD, and these changes are uncommitted in "
                     (mapconcat (lambda (line) (concat "- " (string-trim line)))
                                (split-string dirty "\n" t) "\n"))
             sections))
+    (when-let* ((paragraph (ecc-peer-parent-paragraph session)))
+      (push paragraph sections))
     (if sections
         (concat "\n\nWhat Emacs knows about where this came from:\n\n"
                 (mapconcat #'identity (nreverse sections) "\n\n"))

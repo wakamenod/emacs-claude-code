@@ -1797,6 +1797,42 @@ snapshot can catch this: a face is not text."
         (should (memq 'ecc-user-mark-face (if (listp faces) faces (list faces))))
         (should (memq 'ecc-user-face (if (listp faces) faces (list faces))))))))
 
+(ert-deftest ecc-render-test-peer-message-snapshot ()
+  "A message another session sent is drawn as one, under its sender's name.
+The sender is a session of this Emacs, so it goes by the name it has
+here rather than the one its CLI gave it; the body is the prompt, in a
+band of its own colour, and the words the CLI wraps it in are not
+drawn."
+  (ecc-test-with-fake-session session
+    (let* ((directory (make-temp-file "ecc-render-registry" t))
+           (ecc-registry-directory directory)
+           (ecc-registry-check-process nil)
+           (parent (ecc-model-create-session :name "feat/parent")))
+      (unwind-protect
+          (progn
+            (with-temp-file (expand-file-name "4242.json" directory)
+              (insert (ecc--json-write
+                       `((pid . 4242) (sessionId . ,(ecc-session-id parent))
+                         (name . "parent-4b")
+                         (messagingSocketPath . "/tmp/cc-socks/4242.sock")))))
+            (ecc-session-ensure-buffer session)
+            (ecc-test-dispatch session "peer-message")
+            (ecc-render-flush session)
+            (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+              (should-not (string-search "cross-session-message" text))
+              (should-not (string-search "Another Claude session" text))
+              (ecc-render-test--check "peer-message" text))
+            (with-current-buffer (ecc-session-buffer session)
+              (goto-char (point-min))
+              (should (search-forward "Message from feat/parent" nil t))
+              (should (memq 'ecc-peer-heading-face
+                            (ensure-list (get-text-property (1- (point)) 'face))))
+              (should (search-forward "〉 Capture test" nil t))
+              (let ((faces (ensure-list (get-text-property (line-end-position) 'face))))
+                (should (memq 'ecc-peer-face faces))
+                (should-not (memq 'ecc-user-face faces)))))
+        (delete-directory directory t)))))
+
 (ert-deftest ecc-render-test-code-block-reaches-the-buffer ()
   "A fenced block is coloured by its mode and its fences are out of sight.
 The code block colouring has to survive the trip from

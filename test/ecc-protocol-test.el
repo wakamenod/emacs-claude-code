@@ -624,6 +624,76 @@ against what the registry says."
     (should-not (ecc-protocol-parse-agents "unknown command\n"))
     (should-not (ecc-protocol-parse-agents ""))))
 
+;;;; Messages from another session
+
+(defconst ecc-protocol-test--peer-text
+  (concat "Another Claude session sent a message:\n"
+          "<cross-session-message from=\"uds:/tmp/cc-socks/4242.sock\""
+          " from-name=\"parent-4b\" from-mode=\"prompting\">\n"
+          "レビューは終わりました。\n\n直したら報告してください。\n"
+          "</cross-session-message>\n\n"
+          "This came from another Claude session — not typed by your user.")
+  "A message from another session as the CLI words it (2.1.296).")
+
+(ert-deftest ecc-protocol-test-peer-message-text ()
+  "The text of a message from another session gives its sender and body."
+  (let ((peer (ecc-protocol-peer-message-text ecc-protocol-test--peer-text)))
+    (should (equal (alist-get 'from peer) "uds:/tmp/cc-socks/4242.sock"))
+    (should (equal (alist-get 'name peer) "parent-4b"))
+    (should (equal (alist-get 'mode peer) "prompting"))
+    ;; The body alone: neither the line before the tag nor the paragraph
+    ;; after it, which are addressed to the model.
+    (should (equal (alist-get 'body peer)
+                   "レビューは終わりました。\n\n直したら報告してください。")))
+  ;; An attribute is unescaped.
+  (should (equal (alist-get 'name (ecc-protocol-peer-message-text
+                                   (concat "<cross-session-message from=\"uds:/x\""
+                                           " from-name=\"a &amp; &quot;b&quot;\">\n"
+                                           "hi\n</cross-session-message>")))
+                 "a & \"b\""))
+  ;; A prompt that quotes the tag is not a message: it has to open the text.
+  (should-not (ecc-protocol-peer-message-text
+               (concat "What does this mean?\n" ecc-protocol-test--peer-text)))
+  (should-not (ecc-protocol-peer-message-text "hello"))
+  (should-not (ecc-protocol-peer-message-text nil)))
+
+(ert-deftest ecc-protocol-test-peer-message-is-a-prompt ()
+  "A message from another session opens a turn, with its body as the prompt.
+The stream and the recording mark it differently, and the origin is
+believed before the text."
+  (let ((stream `((type . "user") (isReplay . t) (isSynthetic . t)
+                  (origin . ((kind . "peer") (from . "uds:/tmp/cc-socks/4242.sock")
+                             (name . "parent-4b") (fromMode . "prompting")
+                             (body . "本文")))
+                  (message . ((role . "user")
+                              (content . ,ecc-protocol-test--peer-text)))))
+        (recording `((type . "user") (isMeta . t)
+                     (origin . ((kind . "peer") (from . "uds:/tmp/cc-socks/4242.sock")
+                                (name . "parent-4b") (body . "本文")))
+                     (message . ((role . "user")
+                                 (content . ,ecc-protocol-test--peer-text)))))
+        (bare `((type . "user")
+                (message . ((role . "user")
+                            (content . [((type . "text")
+                                         (text . ,ecc-protocol-test--peer-text))]))))))
+    (should (equal (alist-get 'body (ecc-protocol-peer-message stream)) "本文"))
+    (should (equal (alist-get 'mode (ecc-protocol-peer-message stream)) "prompting"))
+    ;; The mode the origin of a recording leaves out is read from the tag.
+    (should (equal (alist-get 'mode (ecc-protocol-peer-message recording)) "prompting"))
+    (should (equal (ecc-protocol-history-prompt recording) "本文"))
+    ;; A line with no origin is read from its text.
+    (should (equal (alist-get 'name (ecc-protocol-peer-message bare)) "parent-4b"))
+    (should (string-prefix-p "レビュー" (ecc-protocol-history-prompt bare)))
+    ;; What a subagent was told is still not a prompt of the conversation.
+    (should-not (ecc-protocol-history-prompt (cons '(isSidechain . t) recording)))
+    ;; Nor is what a person typed taken for one.
+    (should-not (ecc-protocol-peer-message
+                 '((type . "user") (origin . ((kind . "human")))
+                   (message . ((role . "user") (content . "hello"))))))
+    (should-not (ecc-protocol-peer-message
+                 '((type . "assistant") (origin . ((kind . "peer")))
+                   (message . ((role . "assistant") (content . "hello"))))))))
+
 (provide 'ecc-protocol-test)
 
 ;;; ecc-protocol-test.el ends here
