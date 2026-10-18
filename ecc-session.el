@@ -49,7 +49,6 @@
 (require 'ecc-display)
 (require 'ecc-markdown)
 (require 'ecc-diff)
-(require 'ecc-window)
 (require 'ecc-visit)
 (require 'ecc-perm)
 (require 'ecc-plan)

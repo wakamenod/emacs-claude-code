@@ -42,7 +42,6 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
-(require 'ecc-window)
 (require 'ecc-prompt)
 (require 'ecc-context)
 (require 'ecc-notify)

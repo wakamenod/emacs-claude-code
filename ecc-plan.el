@@ -49,7 +49,6 @@
 (require 'ecc-diff)
 (require 'ecc-render)
 (require 'ecc-perm)
-(require 'ecc-window)
 (require 'ecc-display)
 
 (defvar ecc-plan-modes '("acceptEdits" "default" "bypassPermissions" "plan")

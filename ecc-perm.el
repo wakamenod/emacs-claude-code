@@ -57,7 +57,6 @@
 (require 'ecc-dispatch)
 (require 'ecc-render)
 (require 'ecc-sync)
-(require 'ecc-window)
 (require 'ecc-chat)
 (require 'ecc-display)
 

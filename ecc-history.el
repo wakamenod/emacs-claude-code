@@ -54,7 +54,6 @@
 (require 'ecc-proc)
 (require 'ecc-dispatch)
 (require 'ecc-registry)
-(require 'ecc-window)
 (require 'ecc-render)
 (require 'ecc-chat)
 (require 'ecc-display)

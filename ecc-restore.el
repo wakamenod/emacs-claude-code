@@ -68,7 +68,6 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-history)
-(require 'ecc-window)
 (require 'ecc-lifecycle)
 (require 'ecc-render)
 (require 'ecc-chat)
