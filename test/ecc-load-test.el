@@ -105,8 +105,8 @@ printed and read back, so it must have a printed representation."
 (ert-deftest ecc-load-test-chat-buffer-has-module-keys ()
   "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
 The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
-`ecc-queue', `ecc-hint', `ecc-tui', `ecc-display' and `ecc-transient'
-give them their keys; `ecc-session-ensure-buffer', in `ecc-chat' too, loads the whole
+`ecc-queue', `ecc-hint', `ecc-tui', `ecc-display', `ecc-btw' and
+`ecc-transient' give them their keys; `ecc-session-ensure-buffer', in `ecc-chat' too, loads the whole
 package before it makes the buffer.  Most of the ways to a buffer -- a
 recording read back, the terminal, an answer from anywhere, a Space --
 load `ecc-chat' and never `ecc-prompt' or `ecc-transient', so without
@@ -135,13 +135,14 @@ every path makes one: `ecc-chat' required and
                                      (lookup-key ecc-chat-transcript-map (kbd "t"))
                                      (lookup-key ecc-chat-transcript-map (kbd "?"))
                                      (key-binding (kbd "C-c C-t"))
+                                     (key-binding (kbd "C-c C-b"))
                                      (and (memq #'ecc-hint--setup-mode-line
                                                 ecc-chat-mode-hook)
                                           t))))))
                    (list feature #'ecc-prompt-send #'ecc-session-visit
                          #'ecc-prompt-capf #'ecc-queue-show
                          #'ecc-hint-accept-suggestion #'ecc-menu
-                         #'ecc-tui-open #'ecc-menu #'ecc-switch-session t)))))
+                         #'ecc-tui-open #'ecc-menu #'ecc-switch-session #'ecc-btw-show t)))))
 
 ;; The test above makes the buffer the way every path does; this one
 ;; takes the one path that loads no more than `ecc-chat' on its own,

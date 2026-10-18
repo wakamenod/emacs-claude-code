@@ -58,6 +58,7 @@
 (require 'ecc-proc)
 (require 'ecc-markdown)
 (require 'ecc-window)
+(require 'ecc-chat)
 
 (declare-function posframe-workable-p "ext:posframe" ())
 (declare-function posframe-show "ext:posframe" (buffer &rest args))
@@ -457,6 +458,15 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions'."
       t)))
 
 (add-hook 'ecc-prompt-intercept-functions #'ecc-btw-intercept)
+
+(defvar ecc-btw-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-b") #'ecc-btw-show)
+    map)
+  "The keys of the side question in the prompt region of a session buffer.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-btw-chat-map)
 
 (provide 'ecc-btw)
 
