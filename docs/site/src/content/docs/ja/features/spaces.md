@@ -61,7 +61,7 @@ description: プロジェクトごとのタブ、全プロジェクトとセッ�
 | `k` | このセッションを停止 |
 | `K` | この worktree のディレクトリを削除 |
 | `X` | この Space を閉じる |
-| `a`、`d` | このセッションが待っているものを許可 / 拒否。[ダッシュボード](/emacs-claude-code/ja/features/sessions/#ダッシュボード)と同じ |
+| `a`、`d` | このセッションが待っているものを許可 / 拒否（[詳細](/emacs-claude-code/ja/features/permissions/#リクエストに答える)） |
 | `g` | git の状態を更新して再描画 |
 | `q` | サイドバーを隠す |
 

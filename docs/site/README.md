@@ -176,8 +176,8 @@ The scenes are `switch`, `menu`, `capabilities`, `send-region`, `fix-error`,
 `sessions`, `prompt`, `permission`, `question`, `review`, `proposal`, `plan`,
 `files`, `review-menu`, `review-files`, `ediff`, `ediff-live`,
 `usecase-review`, `timeline`, `handover`, `resume`, `sidebar`, `spaces`,
-`usecase` and `overview`. A scene is not always one picture: `sessions` takes
-`tabs.png` and `dashboard.png`, `prompt` takes `fold.mp4` and `slash.png`,
+`usecase` and `overview`. A scene is not always one picture: `prompt` takes
+`fold.mp4` and `slash.png`,
 `review-menu` the four stills of the review menu and its questions, `ediff`
 the still of the layout and three short videos, and `ediff-live` two. `spaces` is a
 still of the layout the Spaces page opens with: it widens the frame, opens a

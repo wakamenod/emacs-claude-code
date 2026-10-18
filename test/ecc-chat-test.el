@@ -15,7 +15,6 @@
 (require 'ecc-skill)
 (require 'ecc-review)
 (require 'ecc-plan)
-(require 'ecc-dashboard)
 (require 'ecc-capabilities)
 (require 'ecc-usage)
 (require 'ecc-btw)
@@ -98,7 +97,7 @@ nothing to do with whether two maps are ever live at once."
   (dolist (map (list ecc-chat-mode-map ecc-chat-transcript-map
                      ecc-request-section-map ecc-file-section-map
                      ecc-global-map ecc-review-mode-map ecc-plan-mode-map
-                     ecc-question-mode-map ecc-dashboard-mode-map
+                     ecc-question-mode-map
                      ecc-usage-mode-map ecc-btw-mode-map
                      ecc-capabilities-mode-map ecc-skill-mode-map
                      ecc-inline-map ecc-rewrite-map))

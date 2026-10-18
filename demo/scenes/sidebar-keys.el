@@ -175,11 +175,10 @@
   nil)
 
 (defun demo-report-the-two-keys ()
-  "Say what the two keys that swapped now run."
+  "Say what `C-c c b' runs.
+`C-c c B', the dashboard it swapped with, went in 0.5.0."
   (with-current-buffer (get-file-buffer (expand-file-name "greet.py" demo-root))
-    (demo-say (format "C-c c b runs %S   --   C-c c B runs %S"
-                      (key-binding (kbd "C-c c b"))
-                      (key-binding (kbd "C-c c B")))))
+    (demo-say (format "C-c c b runs %S" (key-binding (kbd "C-c c b")))))
   nil)
 
 (defun demo-start-here (&optional name)

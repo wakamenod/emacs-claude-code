@@ -280,11 +280,17 @@ Remote Control was never trusted with."
       (ecc-remote-control-copy-url)
       (should (equal (current-kill 0) "https://claude.ai/code/session_01")))))
 
-(ert-deftest ecc-transient-test-capabilities-is-c-as-in-the-dashboard ()
-  "Capabilities are `C' in the menu, the key the dashboard already used."
+(ert-deftest ecc-transient-test-capabilities-is-c ()
+  "Capabilities are `C' in the menu."
   (let ((menu (ecc-transient-test--menu-keys)))
     (should (eq (cdr (assoc "C" menu)) 'ecc-capabilities-show))
     (should-not (assoc "y" menu))))
+
+(ert-deftest ecc-transient-test-no-dashboard ()
+  "`B' was the dashboard until 0.5.0, and the menu no longer has it."
+  (let ((menu (ecc-transient-test--menu-keys)))
+    (should-not (assoc "B" menu))
+    (should-not (rassq 'ecc-dashboard menu))))
 
 (ert-deftest ecc-transient-test-review-menu ()
   "D opens the review menu, whose D is the review it used to open.

@@ -55,7 +55,6 @@ The menu acts on the session of the current buffer. Elsewhere it takes the proje
 
 | Key | Action | See |
 |---|---|---|
-| `B` | Dashboard | [Dashboard](/emacs-claude-code/features/sessions/#the-dashboard) |
 | `C` | Capabilities | [Capabilities](/emacs-claude-code/features/other/#capabilities) |
 | `h` | Read a recorded conversation; `r` in it resumes it | [Resuming](/emacs-claude-code/features/sessions/#resuming-conversations) |
 | `/` | Search past conversations | [Searching](/emacs-claude-code/features/sessions/#searching-past-conversations) |

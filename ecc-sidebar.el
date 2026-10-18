@@ -34,13 +34,11 @@
 ;; marked with what it is doing -- and the sessions at the bottom, with
 ;; what each is waiting for.
 ;;
-;; It is the one place that says what every project is doing at once.
-;; The dashboard already lists the sessions and lists them better; what
-;; it does not do is stay on the screen while you work, which is the
-;; whole of what this is for.  So it is drawn narrow, it never takes the
-;; selected window, and everything in it is one key away: RET goes there,
-;; a and d answer what is waiting, TAB folds a repository's worktrees
-;; away.
+;; It is the one place that says what every project is doing at once,
+;; and it stays on the screen while you work, which is the whole of
+;; what it is for.  So it is drawn narrow, it never takes the selected
+;; window, and everything in it is one key away: RET goes there, a and
+;; d answer what is waiting, TAB folds a repository's worktrees away.
 ;;
 ;; It is drawn as text with properties rather than as a `tabulated-list':
 ;; two sections with different columns, and a second line under some
@@ -602,8 +600,7 @@ and tells the CLI."
 
 (defun ecc-sidebar--oldest-request ()
   "Return the request the session at point is waiting on.
-`ecc-answer-session-request\\=' is what says which, here and in the
-dashboard alike."
+`ecc-answer-session-request\\=' is what says which."
   (ecc-answer-session-request
    (or (ecc-sidebar--session-at-point)
        (user-error "No session on this line"))))
@@ -611,10 +608,9 @@ dashboard alike."
 (defun ecc-sidebar-allow ()
   "Allow what the session at point is waiting on.
 Whatever kind it is: `ecc-perm-allow-request\\=' approves a plan and opens
-a question where it is answered, which is what the dashboard\\='s `a\\=' has
-always done.  It used to refuse anything but a permission while `d\\='
-denied every kind, so a session waiting on a question could be denied
-from here but not answered."
+a question where it is answered.  It used to refuse anything but a
+permission while `d\\=' denied every kind, so a session waiting on a
+question could be denied from here but not answered."
   (interactive)
   (let ((request (ecc-sidebar--oldest-request)))
     (when (ecc-answer--confirm "Allow" request)
@@ -775,6 +771,9 @@ navigate around."
         (goto-char (point-min))
         (ecc-sidebar-next-line))
       window)))
+
+;;;###autoload
+(define-obsolete-function-alias 'ecc-dashboard #'ecc-sidebar-focus "0.5.0")
 
 (provide 'ecc-sidebar)
 

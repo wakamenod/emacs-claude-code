@@ -25,7 +25,7 @@ Or, without `use-package`:
 | `a` / `d` | Allow or deny the oldest waiting request |
 | `1`–`4` | Answer a waiting question with that option |
 | `n` / `N` | Jump to the next waiting request (anywhere / in this project) |
-| `B` / `D` / `h` / `U` | Dashboard / review menu / read a recording / usage |
+| `D` / `h` / `U` | Review menu / read a recording / usage |
 | `j` / `b` / `z` / `V` | [Spaces](/emacs-claude-code/features/spaces/): go to one / the sidebar / zoom this window / reset this Space's windows |
 | `/` | Search past conversations |
 | `?` | Open the [menu](/emacs-claude-code/reference/menu/), which has every command |

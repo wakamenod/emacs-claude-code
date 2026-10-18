@@ -1065,7 +1065,7 @@ written once."
   "Stop and forget the session when its buffer is killed.
 Killing the buffer is taken as killing the session: the CLI is
 stopped, the session leaves the list, and its line buffer goes with
-it, so that nothing lingers in the dashboard as an exited session with
+it, so that nothing lingers in the sidebar as an exited session with
 no buffer.  An agent transcript shares the session but is
 not its buffer, so killing it does nothing."
   (when-let* ((session ecc-render--session))

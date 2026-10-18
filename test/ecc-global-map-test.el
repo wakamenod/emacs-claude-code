@@ -31,14 +31,13 @@
   (should (eq (lookup-key ecc-global-map (kbd "d")) #'ecc-answer-deny))
   (should (eq (lookup-key ecc-global-map (kbd "n")) #'ecc-next-attention))
   (should (eq (lookup-key ecc-global-map (kbd "4")) #'ecc-answer-option-4))
-  ;; The Spaces have the lower-case keys, being where the day is spent,
-  ;; and the dashboard is the capital beside the sidebar it is the
-  ;; passing form of.
+  ;; The Spaces have the lower-case keys, being where the day is spent.
   (should (eq (lookup-key ecc-global-map (kbd "j")) #'ecc-space-goto))
   (should (eq (lookup-key ecc-global-map (kbd "b")) #'ecc-sidebar-focus))
   (should (eq (lookup-key ecc-global-map (kbd "z")) #'ecc-space-zoom))
   (should (eq (lookup-key ecc-global-map (kbd "V")) #'ecc-space-cycle-layout))
-  (should (eq (lookup-key ecc-global-map (kbd "B")) #'ecc-dashboard))
+  ;; `B' was the dashboard until 0.5.0; the sidebar is the one list.
+  (should-not (lookup-key ecc-global-map (kbd "B")))
   ;; Making and removing a worktree is `ecc-worktree-menu', not a key
   ;; here: three commands that belong together, done in a week what the
   ;; keys above are done in an hour.

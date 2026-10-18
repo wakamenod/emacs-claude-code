@@ -306,7 +306,7 @@ The CLI sums a turn up as it ends: which message it summarizes, a
 `status_category\=' such as \"completed\", a `status_detail\=' in
 words, and `needs_action\=' -- empty when it does not.  The transcript
 already holds the turn it describes, so this is kept where the state
-line and the dashboard can reach it rather than drawn (measured
+line and the sidebar can reach it rather than drawn (measured
 2026-09-08)."
   (let ((detail (alist-get 'status_detail message))
         (needs-action (alist-get 'needs_action message)))

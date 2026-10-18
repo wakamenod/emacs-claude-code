@@ -532,7 +532,7 @@ about background tasks left over from a previous process.
 
 This is the one place every reader of a recording asks, so a notice
 rejected here opens no turn, and is nobody\='s last prompt in the resume
-list, the dashboard, the paging index or the search."
+list, the paging index or the search."
   (when (and (equal (alist-get 'type message) "user")
              (not (eq (alist-get 'isMeta message) t))
              (not (ecc-protocol-injected-p message))

@@ -46,7 +46,7 @@
 (require 'ecc-visual)
 
 ;; Showing a session goes through here from every level -- a question
-;; answered, the dashboard, a recording opened, a restore -- and the
+;; answered, the sidebar, a recording opened, a restore -- and the
 ;; buffer it shows, with the prompt in it, is made above by `ecc-chat'.
 ;; Moving the showing up would have each of those load the whole
 ;; transcript to show one, so these two are loaded where they are called
@@ -206,7 +206,7 @@ of ROOT is one of them."
 The current buffer when there is a file or a directory behind it, then
 the last buffer the user worked in that had one, and `default-directory'
 last.  A buffer with nothing behind it -- the scratch buffer, a
-transcript, the dashboard, a help window -- says nothing about which
+transcript, the sidebar, a help window -- says nothing about which
 project was meant, and a session started from one of those used to land
 wherever that buffer happened to be, which is how a session ends up in
 a project nobody asked for.
@@ -804,8 +804,8 @@ Nothing is written down about where they were.  There was a record of
 it once, for a command that put every hidden session back in the window
 it came from; what brings one back now deals the whole arrangement again
 -- `ecc-space-cycle-layout\=' under `spaces\=', `ecc-focus-project\='
-under `classic\=' -- or shows one session at a time, from the sidebar,
-the dashboard or `ecc-show-session\='."
+under `classic\=' -- or shows one session at a time, from the sidebar
+or `ecc-show-session\='."
   (when-let* ((visible (seq-filter #'ecc-window-session-visible-p sessions)))
     (mapc #'ecc-window-hide-session visible)
     visible))

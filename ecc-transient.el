@@ -54,7 +54,6 @@
 (require 'ecc-review)
 (require 'ecc-review-menu)
 (require 'ecc-search)
-(require 'ecc-dashboard)
 (require 'ecc-capabilities)
 (require 'ecc-inline)
 (require 'ecc-tui)
@@ -392,7 +391,6 @@ before it draws anything."
     ("3" "Answer with option 3" ecc-answer-option-3)
     ("4" "Answer with option 4" ecc-answer-option-4)]
    ["View"
-    ("B" "Dashboard" ecc-dashboard)
     ("C" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
     ("/" "Search past sessions" ecc-search)

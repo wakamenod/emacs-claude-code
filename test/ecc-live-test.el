@@ -19,7 +19,6 @@
 (require 'ecc)
 (require 'ecc-history)
 (require 'ecc-registry)
-(require 'ecc-dashboard)
 (require 'ecc-btw)
 (require 'ecc-skill)
 
@@ -468,9 +467,10 @@ as git status is not used: the CLI runs those without asking."
             (ecc-test-live-wait-any (list session other)
                                     (lambda () (= 2 (length (ecc-model-pending-all))))
                                     "two permission requests")
-            (should (= 2 (length (ecc-dashboard-entries))))
-            (should (equal (sort (mapcar #'ecc-dashboard-entry-name
-                                         (ecc-dashboard-entries))
+            (should (equal (sort (mapcar (lambda (request)
+                                           (ecc-session-name
+                                            (ecc-request-session request)))
+                                         (ecc-model-pending-all))
                                  #'string<)
                            '("live" "live-2")))
             (let ((oldest (car (ecc-model-pending-all))))
@@ -794,8 +794,8 @@ thing standing between a resume and two CLIs on one recording."
           (should entry)
           (should (equal (alist-get 'pid agent) (alist-get 'pid entry)))
           (should (equal (alist-get 'cwd agent) (alist-get 'cwd entry)))
-          ;; The file says `shell' where the command says `busy' the
-          ;; dashboard shows the command's word.
+          ;; The file says `shell' where the command says `busy'; ecc
+          ;; shows the command's word.
           (should (equal (alist-get 'status agent)
                          (ecc-registry-display-status (alist-get 'status entry))))
           ;; What the rest of the package asks the registry.  The

@@ -65,8 +65,9 @@
   (demo-keys "C-c c j" "C-c c b" "C-c c z" "C-c c V"))
 
 (defun demo-report-moved-keys ()
-  "The keys that now mean something else, and the one that is watched."
-  (demo-keys "C-c c B" "C-c c r" "C-c c c"))
+  "The keys that now mean something else, and the one that is watched.
+`C-c c B' was the dashboard here until 0.5.0 took it away."
+  (demo-keys "C-c c r" "C-c c c"))
 
 (defun demo-report-review-keys ()
   "The review key, whose menu holds both reviews."

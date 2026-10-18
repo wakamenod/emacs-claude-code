@@ -29,10 +29,10 @@ From elsewhere:
 |---|---|
 | The prompt region | `C-c C-a` / `C-c C-d`: the request at point, else the oldest in this session, else the oldest of any session |
 | Any buffer | `C-c c a` / `C-c c d`: the oldest request; `C-c c n` jumps to it |
-| The dashboard and the sidebar | `a` / `d` on the session's line |
+| The sidebar | `a` / `d` on the session's line |
 | The menu | `A` allows every waiting request of the session; `-r` also remembers the tools |
 
-Answering from any buffer, the dashboard or the sidebar asks what it is about to answer first; set `ecc-answer-confirm` to `nil` to skip that. It leaves the tools in `ecc-answer-exclude-tools` (`Bash` by default) alone, since a shell command is read in the transcript.
+Answering from any buffer or the sidebar asks what it is about to answer first; set `ecc-answer-confirm` to `nil` to skip that. It leaves the tools in `ecc-answer-exclude-tools` (`Bash` by default) alone, since a shell command is read in the transcript.
 
 ## Questions
 

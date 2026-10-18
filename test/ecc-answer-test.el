@@ -134,6 +134,17 @@ The request of A is a Bash call and older; the one of B is a Write."
     (ecc-pending-indicator-mode -1)
     (should-not (member ecc-pending--mode-line-construct global-mode-string))))
 
+(ert-deftest ecc-answer-test-indicator-click-goes-to-the-next-request ()
+  "`mouse-1' on the indicator goes to the next waiting request.
+It opened the dashboard until 0.5.0."
+  (ecc-answer-test--with-two-sessions a b
+    (let ((indicator (ecc-pending-mode-line-string)))
+      (should (eq (lookup-key (get-text-property 0 'local-map indicator)
+                              [mode-line mouse-1])
+                  #'ecc-next-attention))
+      (should-not (string-search "dashboard"
+                                 (get-text-property 0 'help-echo indicator))))))
+
 (ert-deftest ecc-answer-test-session-mode-line-state ()
   "The session buffer names the waiting kind in its mode line."
   (ecc-answer-test--with-two-sessions a b

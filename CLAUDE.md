@@ -117,7 +117,7 @@ recorder makes it. Beyond that:
 - A recording carries the paths and session names of the machine it was made on. Look at
   a new fixture before committing it.
 - Keep rendering snapshots to the main cases.
-- Anything that spans sessions (the dashboard, answering from anywhere) is tested with
+- Anything that spans sessions (the sidebar, answering from anywhere) is tested with
   two sessions or more: a bug in `ecc-model-pending-all` did not show up with one.
 - Japanese prompts in the tests are input data. They match what the fixtures recorded, and
   they cover multibyte text, so leave them in Japanese.

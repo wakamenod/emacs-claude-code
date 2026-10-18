@@ -810,7 +810,7 @@ meantime drains its own queue as usual."
   "A session whose CLI never came up does not stay in the list.
 `make-process' fails on a root that is not there -- a worktree deleted
 since the Space was made -- and the session was left at `starting' with
-no process, showing in the sidebar and the dashboard for ever.  Two
+no process, showing in the sidebar for ever.  Two
 sessions, because the one that did start must be untouched."
   (ecc-test-with-fake-session session
     (let ((gone (ecc-model-create-session

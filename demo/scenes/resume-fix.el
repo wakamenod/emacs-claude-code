@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 
-;; What `/resume', `ecc-resume' and the dashboard's `R' all do is stop
+;; What `/resume', `ecc-resume' and the sidebar's `r' all do is stop
 ;; one CLI and start another inside the same command.  Emacs runs a
 ;; process sentinel when it next waits for output, which is regularly
 ;; after the second one is already installed, and the exit of the first

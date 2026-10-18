@@ -37,8 +37,8 @@
 ;;
 ;; `M-x ecc-start' starts a session in the project of the current
 ;; buffer and `M-x ecc-resume' opens a conversation again.  `M-x
-;; ecc-menu' is every command in one menu, and `M-x ecc-dashboard'
-;; lists the sessions of this Emacs with the recordings beside them.
+;; ecc-menu' is every command in one menu, and `M-x ecc-sidebar-focus'
+;; lists the Spaces and the sessions of this Emacs beside the windows.
 ;;
 ;; The CLI is not part of this package: install it separately, and name
 ;; it in `ecc-executable' if it is not found on `exec-path'.
@@ -76,7 +76,6 @@
 (require 'ecc-search)
 (require 'ecc-capability)
 (require 'ecc-capabilities)
-(require 'ecc-dashboard)
 (require 'ecc-window)
 (require 'ecc-lifecycle)
 (require 'ecc-worktree)
@@ -138,10 +137,6 @@
     ;; windows around it, which is the pair worth having beside each
     ;; other.
     ;;
-    ;; `B' is the dashboard: the capital beside the `b' that is pressed
-    ;; all day, the two being the same list, one that stays on the screen
-    ;; and one that does not.
-    ;;
     ;; Nothing here makes or removes a worktree.  The three that do
     ;; belong together and are done in a week what these are done in an
     ;; hour: they are `ecc-worktree-menu', under `?' then `W'.
@@ -159,7 +154,6 @@
     (define-key map (kbd "3") #'ecc-answer-option-3)
     (define-key map (kbd "4") #'ecc-answer-option-4)
     ;; Looking around.
-    (define-key map (kbd "B") #'ecc-dashboard)
     ;; `D' asks what to compare: `D' again is what changed since the
     ;; session started, `w' what changed since the last commit.
     (define-key map (kbd "D") #'ecc-review-menu)

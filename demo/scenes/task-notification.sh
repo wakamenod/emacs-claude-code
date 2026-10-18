@@ -22,7 +22,7 @@ e "(demo-goto-notice-before)"; sleep 5
 say "That is the bug as it was reported: the transcript comes back with a user mark on it"; sleep 6
 e "(demo-report-turns-before)"; sleep 6
 
-say "And the same text is what the resume list and the dashboard call the last prompt"; sleep 5
+say "And the same text is what the resume list calls the last prompt"; sleep 5
 e "(demo-report-resume-line-before)"; sleep 7
 
 say "2. After: the same recording, read with this branch"; sleep 4

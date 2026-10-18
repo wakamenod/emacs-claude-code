@@ -37,7 +37,7 @@
 ;; Two ways of reaching a request without hunting for its session: the
 ;; commands that jump to the next one, and the commands that answer the
 ;; oldest one from wherever the user is.  A mode line indicator says how
-;; many are waiting, and the dashboard is where they are seen as a list.
+;; many are waiting, and the sidebar is where they are seen as a list.
 
 ;;; Code:
 
@@ -49,8 +49,6 @@
 (require 'ecc-perm)
 (require 'ecc-window)
 (require 'ecc-plan)
-
-(declare-function ecc-dashboard "ecc-dashboard" ())
 
 (defvar ecc-answer-confirm t
   "Non-nil asks before a request is answered from another buffer.")
@@ -145,7 +143,7 @@ KIND limits the search to that kind of request.  Tools listed in
 
 (defun ecc-answer-session-request (session)
   "Return the oldest request of SESSION that may be answered from a list.
-What the sidebar and the dashboard answer with `a\\=' and `d\\=': the row
+What the sidebar answers with `a\\=' and `d\\=': the row
 says which session, and this says what of it.  A tool of
 `ecc-answer-exclude-tools\\=' is refused here as `ecc-answer-target\\='
 skips it elsewhere -- a shell command has to be read whole before it is
@@ -225,10 +223,10 @@ question buffer opens with the first one answered."
         ""
       (propertize (format " ⚠ecc:%d " n)
                   'face 'ecc-pending-face
-                  'help-echo "Claude is waiting for an answer.  mouse-1: dashboard"
+                  'help-echo "Claude is waiting for an answer.  mouse-1: go to the next one"
                   'mouse-face 'mode-line-highlight
                   'local-map (let ((map (make-sparse-keymap)))
-                               (define-key map [mode-line mouse-1] #'ecc-dashboard)
+                               (define-key map [mode-line mouse-1] #'ecc-next-attention)
                                map)))))
 
 (defconst ecc-pending--mode-line-construct '(:eval (ecc-pending-mode-line-string))

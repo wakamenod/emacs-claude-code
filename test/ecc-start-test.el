@@ -31,7 +31,7 @@ directory under ROOT belongs to a transient project rooted there."
 
 (ert-deftest ecc-start-test-root-comes-from-the-last-file-buffer ()
   "A session started from a buffer with no file behind it follows the user.
-The scratch buffer, a transcript and the dashboard are all ordinary
+The scratch buffer, a transcript and a help buffer are all ordinary
 buffers standing in some directory of their own, and starting from one
 of them used to put the session there."
   (ecc-start-test--with-project "/tmp/ecc-start-project/"

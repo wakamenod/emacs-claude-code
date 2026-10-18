@@ -12,7 +12,7 @@ say "0.3.0 -- the sidebar, and every key that works in it"; sleep 4
 e "(demo-frame)"; sleep 1
 e "(demo-open-source)"; sleep 4
 
-say "1. The two keys that swapped: C-c c b is the sidebar now, C-c c B the dashboard"; sleep 6
+say "1. C-c c b is the sidebar"; sleep 6
 e "(demo-report-the-two-keys)"; sleep 7
 e "(demo-show-sidebar)"; sleep 4
 e "(demo-frame)"; sleep 2
