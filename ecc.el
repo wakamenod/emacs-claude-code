@@ -8,7 +8,7 @@
 ;; Assisted-by: Claude Code:claude-fable-5-1
 ;; Assisted-by: Claude Code:claude-haiku-4-5
 ;; Maintainer: Jun <wakamenod@gmail.com>
-;; Version: 0.4.5
+;; Version: 0.5.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: tools, processes
 ;; URL: https://github.com/wakamenod/emacs-claude-code
