@@ -59,6 +59,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'ecc-core)
+(require 'ecc-chat)
 (require 'ecc-review)
 (require 'ecc-visit)
 
@@ -821,6 +822,20 @@ are kept and sent with the others."
           (ecc-review-files--hide-pane review))
         (with-current-buffer review
           (ecc-review-files--render))))))
+
+;;;; Keys
+
+(defvar ecc-review-files-review-map
+  (let ((map (make-sparse-keymap)))
+    ;; s was `diff-split-hunk', which edits the buffer and is refused
+    ;; with the rest of those keys; s toggles the files pane instead.
+    (define-key map (kbd "s") #'ecc-review-files-toggle)
+    (define-key map (kbd "/") #'ecc-review-files-filter)
+    map)
+  "The keys of the files pane in a diff review.
+A parent of `ecc-review-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-review-mode-map ecc-review-files-review-map)
 
 (provide 'ecc-review-files)
 

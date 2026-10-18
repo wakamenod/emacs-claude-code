@@ -79,6 +79,7 @@
 (require 'seq)
 (require 'ecc-core)
 (require 'ecc-git)
+(require 'ecc-chat)
 (require 'ecc-review)
 
 (defvar ecc-review-gh-executable "gh"
@@ -967,6 +968,22 @@ opened to be read over and changed first."
                         reviews)))
     (ecc-review-send-text session (ecc-review-pr-message walk reviews) (current-buffer) edit
                           (lambda () (ecc-review-pr--sent walk notes)))))
+
+;;;; Keys
+
+(defvar ecc-review-pr-review-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "]") #'ecc-review-pr-next-commit)
+    (define-key map (kbd "[") #'ecc-review-pr-previous-commit)
+    ;; C-c C-a was `diff-apply-hunk', which writes into the file the
+    ;; hunk is of: a review reads and comments, and Claude changes the
+    ;; files.
+    (define-key map (kbd "C-c C-a") #'ecc-review-pr-send-all)
+    map)
+  "The keys of a pull request read a commit at a time, in a diff review.
+A parent of `ecc-review-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-review-mode-map ecc-review-pr-review-map)
 
 (provide 'ecc-review-pr)
 
