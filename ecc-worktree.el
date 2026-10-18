@@ -55,11 +55,10 @@
 (require 'ecc-mcp)
 (require 'ecc-lifecycle)
 (require 'ecc-chat)
+(require 'ecc-review-pr)
 
 (declare-function ecc-space-forget "ecc-space" (root))
 (declare-function ecc-space-at-p "ecc-space" (root))
-(declare-function ecc-review-pr-available-p "ecc-review-pr" ())
-(declare-function ecc-review-pr-merged "ecc-review-pr" (root branch))
 ;; Bound around the kill loop below: a Space closing itself halfway
 ;; through a removal would take the tab out from under the command.
 (defvar ecc-space--closing)
@@ -824,11 +823,9 @@ being refused for another reason" unsettled)))
 (defun ecc-worktree--merged-by-pull-request (repository branch tip unsettled)
   "Ask gh whether BRANCH of REPOSITORY landed through a pull request at TIP.
 UNSETTLED says what ancestry found, for the answer when gh does not
-settle it either.  The JSON gh prints is read in `ecc-review-pr', loaded
-only now: this file is below the review.  gh failing, or giving no
-answer in time, is a `user-error' there and a sentence of the answer
-here; anything else is a fault and goes up."
-  (require 'ecc-review-pr)
+settle it either.  The JSON gh prints is read in `ecc-review-pr'.  gh
+failing, or giving no answer in time, is a `user-error' there and a
+sentence of the answer here; anything else is a fault and goes up."
   (let ((main (plist-get repository :main))
         (bases (plist-get repository :bases)))
     (if (not (ecc-review-pr-available-p))
