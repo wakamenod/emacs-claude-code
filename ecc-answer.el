@@ -48,8 +48,8 @@
 (require 'ecc-render)
 (require 'ecc-perm)
 (require 'ecc-window)
+(require 'ecc-plan)
 
-(declare-function ecc-plan-open "ecc-plan" (request))
 (declare-function ecc-dashboard "ecc-dashboard" ())
 
 (defvar ecc-answer-confirm t
@@ -87,7 +87,6 @@ A request for one of them has to be answered where it can be read.")
      (ecc-window-display-beside-session (ecc-question-open request)
                                         (ecc-request-session request)))
     ('plan
-     (require 'ecc-plan)
      (ecc-window-display-beside-session (ecc-plan-open request)
                                         (ecc-request-session request)))
     (_ (let* ((session (ecc-request-session request))
