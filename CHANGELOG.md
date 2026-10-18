@@ -177,6 +177,20 @@ Verified against **Claude Code CLI 2.1.290**.
   `ecc-plan`, `ecc-lifecycle.el` requires `ecc-answer`, and
   `ecc-worktree.el` requires `ecc-review-pr`. Nothing changes for the
   user.
+- Showing a session is in a new module, `ecc-display.el`, which sits above
+  `ecc-chat.el` and below every module that shows one. `ecc-display-session`,
+  `ecc-window-select-session`, `ecc-window-display-beside-session`,
+  `ecc-window-display-review`, `ecc-window-show-review-quietly`,
+  `ecc-window-hide-for-review`, `ecc-switch-session` and
+  `ecc-focus-project` come out of `ecc-window.el` under the same names,
+  with `ecc-window-hide-on-review`, `ecc-window-review-focus` and
+  `ecc-window-quiet-split-min-height`. `ecc-window.el` keeps the projects,
+  the source buffers, the regions and which session a command means, and
+  no longer declares a function of `ecc-chat.el` or loads it at run time.
+  `C-c C-t` in a session buffer is bound in a keymap of `ecc-display.el`,
+  `ecc-display-chat-map`, which it hangs under `ecc-chat-mode-map`, so a
+  `C-c C-t` of your own there still wins. Every key and every window is as
+  before.
 
 ### Fixed
 

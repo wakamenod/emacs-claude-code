@@ -59,6 +59,7 @@
 (require 'ecc-model)
 (require 'ecc-git)
 (require 'ecc-window)
+(require 'ecc-display)
 (require 'ecc-worktree)
 (require 'ecc-space)
 (require 'ecc-notify)

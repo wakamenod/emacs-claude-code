@@ -57,6 +57,7 @@
 (require 'ecc-window)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-display)
 
 (defvar ecc-history-page-turns 50
   "Number of turns read when a recorded conversation is opened.")

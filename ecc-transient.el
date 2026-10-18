@@ -47,6 +47,7 @@
 (require 'ecc-context)
 (require 'ecc-notify)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-session)
 (require 'ecc-perm)
 (require 'ecc-answer)

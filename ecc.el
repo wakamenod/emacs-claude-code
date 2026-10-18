@@ -60,6 +60,7 @@
 (require 'ecc-dispatch)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-session)
 (require 'ecc-prompt)
 (require 'ecc-queue)

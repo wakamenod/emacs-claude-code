@@ -50,6 +50,7 @@
 (require 'ecc-render)
 (require 'ecc-perm)
 (require 'ecc-window)
+(require 'ecc-display)
 
 (defvar ecc-plan-modes '("acceptEdits" "default" "bypassPermissions" "plan")
   "Permission modes offered when a plan is approved.

@@ -59,6 +59,7 @@
 (require 'ecc-sync)
 (require 'ecc-window)
 (require 'ecc-chat)
+(require 'ecc-display)
 
 (defvar ecc-perm-default-deny-message "User denied this tool call."
   "Message sent to Claude when the user denies without giving a reason.")
