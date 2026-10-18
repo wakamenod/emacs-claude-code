@@ -70,9 +70,9 @@
 (require 'ecc-history)
 (require 'ecc-window)
 (require 'ecc-lifecycle)
+(require 'ecc-render)
+(require 'ecc-chat)
 
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-render-refresh "ecc-render" (session))
 (declare-function ecc-space-tab-roots "ecc-space" (&optional frame))
 (declare-function ecc-space-of-root "ecc-space" (root))
 (declare-function ecc-space-select "ecc-space" (space))
@@ -352,7 +352,6 @@ cons returned instead: (nil . REASON)."
         (ecc-model-set-state session 'exited)
         (when (plist-get entry :rename-pending)
           (setf (ecc-session-rename-pending session) t))
-        (require 'ecc-session)
         (ecc-session-ensure-buffer session)
         (ecc-history-load session)
         (cons session nil))))))
@@ -384,7 +383,6 @@ saved as `:rename-pending\=' is one the CLI is still to be told."
               ((buffer-live-p buffer)))
     (with-current-buffer buffer
       (setq default-directory (plist-get entry :root))))
-  (require 'ecc-render)
   (ecc-render-refresh session)
   (cons session nil))
 

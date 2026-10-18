@@ -106,13 +106,13 @@ printed and read back, so it must have a printed representation."
   "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
 The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
 `ecc-queue', `ecc-hint', `ecc-tui' and `ecc-transient' give them their
-keys; `ecc-session-ensure-buffer' loads the whole package before it
-makes the buffer.  Most of the ways to a buffer -- a recording read
-back, the terminal, an answer from anywhere, a Space -- load
-`ecc-session' and never `ecc-prompt' or `ecc-transient', so without that
-a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
+keys; `ecc-session-ensure-buffer', in `ecc-chat' too, loads the whole
+package before it makes the buffer.  Most of the ways to a buffer -- a
+recording read back, the terminal, an answer from anywhere, a Space --
+load `ecc-chat' and never `ecc-prompt' or `ecc-transient', so without
+that a buffer would come up with no \\`C-c C-c' and no \\`?'.  FEATURE is
 required as that entry point would be, and the buffer is made the way
-every path makes one: `ecc-session' required at run time and
+every path makes one: `ecc-chat' required and
 `ecc-session-ensure-buffer' called."
   (dolist (feature '(ecc-chat ecc-session ecc-window ecc-space ecc-history
                               ecc-restore ecc-tui ecc-answer ecc))
@@ -120,7 +120,7 @@ every path makes one: `ecc-session' required at run time and
                          (ecc-load-test--run
                           `(progn
                              (require ',feature)
-                             (require 'ecc-session)
+                             (require 'ecc-chat)
                              (with-current-buffer
                                  (ecc-session-ensure-buffer
                                   (ecc-model-create-session
@@ -143,13 +143,13 @@ every path makes one: `ecc-session' required at run time and
                          #'ecc-tui-open #'ecc-menu t)))))
 
 ;; The test above makes the buffer the way every path does; this one
-;; takes the one path that loads no more than `ecc-session' on its own,
+;; takes the one path that loads no more than `ecc-chat' on its own,
 ;; from the autoload on.
 (ert-deftest ecc-load-test-recording-opened-cold-has-module-keys ()
   "A recording opened in an Emacs that has loaded nothing of ecc has its keys.
 `ecc-history-open' is autoloaded from `ecc-history', which loads
-`ecc-session' and none of the modules above `ecc-chat'; the buffer it
-makes still has \\`C-c C-c' and \\`?', since making it loads the package."
+`ecc-chat' and none of the modules above it; the buffer it makes still
+has \\`C-c C-c' and \\`?', since making it loads the package."
   (let ((file (ecc-test-history-fixture "session")))
     (should (equal (ecc-load-test--run
                     `(progn
@@ -159,12 +159,26 @@ makes still has \\`C-c C-c' and \\`?', since making it loads the package."
                          ;; Emacs is not told by the autoload.
                          (require 'ecc-history)
                          (puthash id ,file ecc-history--files)
-                         (with-current-buffer
-                             (ecc-session-buffer (ecc-history-open id))
-                           (list (featurep 'ecc)
-                                 (key-binding (kbd "C-c C-c"))
-                                 (lookup-key ecc-chat-transcript-map (kbd "?")))))))
-                   (list t #'ecc-prompt-send #'ecc-menu)))))
+                         (list (featurep 'ecc-session)
+                               (with-current-buffer
+                                   (ecc-session-buffer (ecc-history-open id))
+                                 (list (featurep 'ecc)
+                                       (key-binding (kbd "C-c C-c"))
+                                       (lookup-key ecc-chat-transcript-map
+                                                   (kbd "?"))))))))
+                   (list nil (list t #'ecc-prompt-send #'ecc-menu))))))
+
+(ert-deftest ecc-load-test-chat-mode-loads-nothing ()
+  "`ecc-chat-mode' loads nothing above `ecc-chat'; making a session buffer does.
+The mode is the buffer's keymaps and its drawing, and the modules above
+give it their keys from below; what loads them is
+`ecc-session-ensure-buffer', which makes the buffer."
+  (should (equal (ecc-load-test--run
+                  '(progn
+                     (require 'ecc-chat)
+                     (with-temp-buffer (ecc-chat-mode))
+                     (list (featurep 'ecc) (featurep 'ecc-session))))
+                 '(nil nil))))
 
 (ert-deftest ecc-load-test-user-bindings-survive-the-modules ()
   "A key a user binds once `ecc-chat' is loaded keeps its binding.
@@ -530,14 +544,29 @@ The Spaces are built on top of the windows: what differs under them is a
 generic function of `ecc-window' that `ecc-space' specialises, and no
 `declare-function' or `require' of `ecc-window' names `ecc-space' or any
 other module that requires it.  What is left is the buffer a session is
-shown in and its prompt, which `ecc-session' and `ecc-chat' make; a
-reference added here fails this, and one taken away is struck off."
+shown in and its prompt, which `ecc-chat' makes; a reference added here
+fails this, and one taken away is struck off."
   (should (equal (ecc-load-test--upward 'ecc-window)
                  '((declare ecc-chat-goto-prompt ecc-chat)
-                   (declare ecc-session-ensure-buffer ecc-session)
-                   (require ecc-session ecc-session)
-                   (require ecc-session ecc-session)
-                   (require ecc-session ecc-session)))))
+                   (declare ecc-session-ensure-buffer ecc-chat)
+                   (require ecc-chat ecc-chat)
+                   (require ecc-chat ecc-chat)
+                   (require ecc-chat ecc-chat)))))
+
+(ert-deftest ecc-load-test-only-chat-loads-the-package ()
+  "No module but `ecc-chat' loads `ecc' at run time.
+`ecc' requires every module, so a module loading it is a call to the
+top.  There is one, `ecc--require-package', beside the function that
+makes a session buffer, and every command that wants the package calls
+it."
+  (let ((dir (file-name-directory (locate-library "ecc.el" t))))
+    (should (equal (seq-filter
+                    (lambda (file)
+                      (member '(require ecc ecc)
+                              (cdr (ecc-load-test--references
+                                    (expand-file-name file dir)))))
+                    (directory-files dir nil "\\`ecc.*\\.el\\'"))
+                   '("ecc-chat.el")))))
 
 (ert-deftest ecc-load-test-spaces-reached-from-a-recording ()
   "A recording opened under `spaces' is shown in a Space, in an Emacs of its own.
