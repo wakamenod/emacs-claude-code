@@ -42,7 +42,6 @@
 
 (require 'cl-lib)
 (require 'seq)
-(require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-window)

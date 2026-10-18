@@ -68,7 +68,6 @@
 (require 'ecc-registry)
 (require 'ecc-history)
 (require 'ecc-chat)
-(require 'ecc-session)
 
 (declare-function ghostel-exec "ext:ghostel" (buffer program &optional args identity))
 

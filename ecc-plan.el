@@ -44,7 +44,6 @@
 (require 'seq)
 (require 'diff-mode)
 (require 'ecc-core)
-(require 'ecc-protocol)
 (require 'ecc-model)
 (require 'ecc-diff)
 (require 'ecc-render)

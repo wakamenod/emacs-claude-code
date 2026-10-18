@@ -65,7 +65,6 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'tab-bar)
-(require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-history)
 (require 'ecc-lifecycle)
