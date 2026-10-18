@@ -17,9 +17,9 @@ say "1. The four lower-case keys are the Spaces now"; sleep 4
 e "(demo-report-spaces-keys)"; sleep 9
 say "Before: C-c c j focused a project, C-c c b was the dashboard, and V showed the source"; sleep 8
 
-say "2. B is the dashboard -- the same list, in the form that does not stay on the screen"; sleep 6
+say "2. The keys that moved"; sleep 4
 e "(demo-report-moved-keys)"; sleep 9
-say "C-c c r resumes at once now; C-u C-c c r forks.  b and B are the pair to watch"; sleep 8
+say "C-c c r resumes at once now; C-u C-c c r forks"; sleep 8
 
 say "3. The review menu: D since the session started, w since the last commit"; sleep 5
 e "(demo-report-review-keys)"; sleep 8

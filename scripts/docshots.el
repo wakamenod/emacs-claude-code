@@ -17,7 +17,7 @@
 ;;   switch   two sessions, the picker, and the window changing hands
 ;;   menu     `ecc-menu' open over a session
 ;;   resume   the session picker of `ecc-resume', with an icon per state
-;;   sessions the tab line and the dashboard, over four sessions at once
+;;   sessions the tab line, over four sessions at once
 ;;   prompt   the slash command list, and the transcript being folded
 ;;   review   the diff, a proposal, a plan, the Files section, the turns
 ;;
@@ -911,9 +911,8 @@ one recording evict each other from the registry."
 
 (defun shot-scene-focus-end ()
   "Take the second project away again.
-The scenes after this one photograph the dashboard and the tab line,
-which list every session there is: a project left over from here would
-be in both of them."
+The scenes after this one photograph the tab line, which lists every
+session there is: a project left over from here would be in it."
   (when shot-foreign
     (ecc-window-hide-session shot-foreign)
     (ecc-model-remove-session shot-foreign)
@@ -2491,11 +2490,10 @@ drives this one step at a time and takes a frame after each."
     (call-interactively command)
     (redisplay t)))
 
-;;;; The dashboard and the tab line
+;;;; The tab line
 
-;; Both pictures want the same thing: several sessions at once, each in a
-;; different state, so that a mark, a colour and a column can be read
-;; against one another.  Two of the four are replayed sessions that are
+;; The picture wants several sessions at once, each in a different
+;; state, so that a mark and a colour can be read against one another.  Two of the four are replayed sessions that are
 ;; already there; the other two are made here and taken away again by
 ;; `shot-scene-sessions-end'.
 
@@ -2506,8 +2504,8 @@ drives this one step at a time and takes a frame after each."
   "Put four sessions into four states and show the tab line over them.
 `records' is working, `notes' has nothing to do, a third is waiting for
 an answer and a fourth has stopped.  The states are set here rather
-than arrived at: a picture of a dashboard with one idle row in it says
-nothing about what the columns are for."
+than arrived at: a picture of a tab line with one idle tab in it says
+nothing about what the marks are for."
   ;; The waiting one stops where its recording asks to write a file: the
   ;; first eight messages are the turn up to the permission.
   (setq shot-waiting (ecc-model-create-session :name "api"
@@ -2524,15 +2522,6 @@ nothing about what the columns are for."
   (setf (ecc-session-process shot-main) (start-process "shot-alive" nil "sleep" "600"))
   (ecc-model-set-state shot-main 'running)
   (ecc-model-set-state shot-other 'idle)
-  ;; Every session answered a moment ago, which makes every Updated cell
-  ;; say "just now"; spreading them out shows the column doing its work.
-  (setf (ecc-session-last-result-time shot-main) (current-time))
-  (setf (ecc-session-last-result-time shot-waiting)
-        (time-subtract (current-time) (* 4 60)))
-  (setf (ecc-session-last-result-time shot-other)
-        (time-subtract (current-time) (* 26 60)))
-  (setf (ecc-session-last-result-time shot-exited)
-        (time-subtract (current-time) (* 95 60)))
   ;; The tab of a session waiting for an answer blinks, and a still
   ;; taken on the dark beat shows it inverse-video -- which is the
   ;; blink, not the colour the page is about.
@@ -2540,30 +2529,6 @@ nothing about what the columns are for."
   (setq ecc-tab--blink-phase nil)
   (shot-show shot-main)
   (ecc-tab--force-update)
-  (redisplay t))
-
-(defun shot-scene-dashboard ()
-  "Open the dashboard over those four sessions, filling the frame.
-The list is seven columns wide, and in the window `display-buffer'
-gives it beside a session everything after Project falls off the right
-edge -- which is most of what the picture is for."
-  ;; The seven columns and the gutter want more than the 112 the other
-  ;; scenes are framed at, and the height is cut to what four rows and
-  ;; the summary above them need, so that the list is the picture.  The frame is put back in the corner
-  ;; afterwards, because it grows to the right and would leave the screen.
-  (set-frame-size (selected-frame) 150 12)
-  (shot-place-frame-bottom-right)
-  (ecc-dashboard)
-  (when-let* ((window (get-buffer-window ecc-dashboard-buffer-name)))
-    (select-window window)
-    ;; A session window is a side window, and a side window refuses to
-    ;; become the only window unless its parameters are ignored.
-    (let ((ignore-window-parameters t))
-      (delete-other-windows))
-    (goto-char (point-min))
-    (ecc-dashboard--first-row))
-  (ecc-tab-blink-stop)
-  (setq ecc-tab--blink-phase nil)
   (redisplay t))
 
 (defun shot-scene-sessions-end ()
@@ -2581,10 +2546,6 @@ and every picture taken after it has a blinking corner."
       (when (buffer-live-p (ecc-session-buffer session))
         (kill-buffer (ecc-session-buffer session)))))
   (setq shot-waiting nil shot-exited nil)
-  ;; The dashboard still widened the frame; the scenes after this one are
-  ;; framed the way `shot-setup-frame' left it.
-  (set-frame-size (selected-frame) 112 44)
-  (shot-place-frame-bottom-right)
   (when-let* ((process (ecc-session-process shot-main)))
     (when (process-live-p process) (delete-process process)))
   (setf (ecc-session-process shot-main) nil)

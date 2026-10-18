@@ -700,12 +700,11 @@ if want capabilities; then
 fi
 
 if want sessions; then
-    # The dashboard and the tab line, over four sessions in four states.
+    # The tab line, over four sessions in four states.
     # It replays fixtures, so it costs nothing; it is placed before the
     # scenes that follow because it leaves a permission waiting, which
     # `shot-scene-sessions-end' then answers.
     e '(shot-scene-sessions)'     ; sleep 2; still "$outdir/tabs.png"
-    e '(shot-scene-dashboard)'    ; sleep 2; still "$outdir/dashboard.png"
     e '(shot-scene-sessions-end)' ; sleep 1
 fi
 

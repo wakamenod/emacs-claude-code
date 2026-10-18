@@ -69,8 +69,8 @@
 (defun demo-excerpt (lines index)
   "Return the turns of LINES up to and including the notice at INDEX.
 The notice is left at the end, which is where the round trip of `t' and
-`/exit' puts it; it is then also what the resume list and the dashboard
-call the session's last prompt.  The `last-prompt' lines are left out:
+`/exit' puts it; it is then also what the resume list
+calls the session's last prompt.  The `last-prompt' lines are left out:
 they name a leaf that is not in the excerpt, and every line would look
 like an abandoned branch."
   (let ((start (or (cl-loop for i downfrom (1- index) to 0
@@ -229,9 +229,9 @@ padding before the fold cell carries no node at all."
   (demo-report-turns demo-after "After"))
 
 (defun demo-report-resume-line (what)
-  "Say what the resume list and the dashboard call the last prompt, as WHAT."
+  "Say what the resume list calls the last prompt, as WHAT."
   (let ((info (ecc-history-scan-file demo-recording)))
-    (demo-say (format "%s -- last prompt in the resume list and the dashboard: %s"
+    (demo-say (format "%s -- last prompt in the resume list: %s"
                       what
                       (ecc--truncate
                        (string-join

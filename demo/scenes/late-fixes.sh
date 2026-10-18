@@ -48,21 +48,6 @@ e "(demo-report-asked)"; sleep 7
 say "A shell command is read in the transcript -- RET on the row -- not from a summary cut to 28 columns"; sleep 9
 e "(demo-report-pending)"; sleep 7
 
-say "6. The dashboard is the same list, and now it answers the same way"; sleep 6
-e "(demo-open-dashboard)"; sleep 5
-e "(demo-dashboard-point-on \"alpha\")"; sleep 4
-e "(demo-dashboard-key \"a\")"; sleep 6
-e "(demo-report-message)"; sleep 9
-say "It used to allow whatever the row was waiting on, Bash included, without a word"; sleep 8
-
-say "7. And the dashboard's k asks before it stops a session"; sleep 6
-e "(demo-expect (quote (\"Stop \" . nil)))"; sleep 2
-e "(demo-dashboard-point-on \"alpha\")"; sleep 3
-e "(demo-dashboard-key \"k\")"; sleep 8
-e "(demo-report-asked)"; sleep 8
-e "(demo-report-names)"; sleep 8
-say "No left it where it was -- it used to stop the session with no question at all"; sleep 8
-
 e "(demo-save-log \"/tmp/ecc-demo-late-fixes-log.txt\")"; sleep 2
 e "(demo-cleanup)"; sleep 6
 say "That is the whole of what came after the pull request."; sleep 5

@@ -231,8 +231,7 @@ where the garbage that a collection later stops for comes from."
     (ecc-render--timer-fired . live-redraw)
     (ecc-visual--spinner-tick . spinner)
     (ecc-visual--tick-overlay . pulse/blink)
-    (ecc-tab--blink-tick . tab-blink)
-    (ecc-dashboard--spinner-tick . dashboard))
+    (ecc-tab--blink-tick . tab-blink))
   "The functions timed, and what they are called in the report.")
 
 (defun bench-stream--redisplay-after (&rest _)
