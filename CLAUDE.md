@@ -43,6 +43,11 @@ session, and `ecc-transient.el` the menu. The boundaries that are rules:
   session starts nothing: `ecc-start` is above `ecc-display.el`, so a Space opened on
   the way to a session -- a worktree's repository, a restored tab -- comes up empty, and
   `ecc-space-select` is what starts a session in one.
+- A module below calls up through a generic function that the module above specialises
+  only where that is the design, as the review style does (`ecc-review--open` and
+  `ecc-review--open-range`, whose `ediff` methods are in `ecc-review-ediff.el`). A
+  method exists only once its module is loaded, so a command that can reach such a
+  generic before a session exists calls `ecc--require-package` first.
 
 Each script in `scripts/` says in its own header what it is and how to run it. Run
 `scripts/bench-render.el` before and after touching the renderer. The documentation site
