@@ -3847,6 +3847,30 @@ session left to drive."
              (display-graphic-p frame))
     (select-frame-set-input-focus frame)))
 
+(defun ecc-review-ediff--open-in-walk (walk session range)
+  "Open the ediff review of RANGE, of the pull request WALK, for SESSION."
+  (ecc-review-pr-opening walk
+    (ecc-review-ediff-range-buffer session range (ecc-review-pr-walk-root walk))))
+
+(cl-defmethod ecc-review-pr--replace (walk session range from
+                                           &context (major-mode ediff-mode))
+  "Quit the ediff review FROM of WALK and open RANGE for SESSION in its place.
+An ediff review takes the frame, so the one left is quit, its comments
+held by WALK, and the next opened in its place; if that cannot be
+opened, the one quit comes back."
+  (let ((left ecc-review--range))
+    (ecc-review-pr--hold walk)
+    (ecc-review-ediff-quit from)
+    (condition-case err
+        (ecc-review-ediff--open-in-walk walk session range)
+      (error
+       (ecc-review-ediff--open-in-walk walk session left)
+       (signal (car err) (cdr err))))))
+
+(cl-defmethod ecc-review-pr--refresh-header (buffer &context (major-mode ediff-mode))
+  "Draw the headers and mode lines of the ediff review BUFFER again."
+  (ecc-review-direct-refresh-headers buffer))
+
 (defun ecc-review-ediff-quit (control)
   "Quit the ediff review in CONTROL, which closes it and its buffers.
 This is what `ecc-review--close-function\\=' is set to: a review that

@@ -81,11 +81,6 @@
 (require 'ecc-git)
 (require 'ecc-review)
 
-(declare-function ecc-review-ediff-quit "ecc-review-ediff" (control))
-(declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
-                  (session &optional range root paths))
-(declare-function ecc-review-direct-refresh-headers "ecc-review-ediff" (control))
-
 (defvar ecc-review-gh-executable "gh"
   "The gh program `p' in `ecc-review-menu' asks for pull requests.")
 
@@ -673,41 +668,35 @@ the rest; one with none is opened again as easily."
              (null (get-buffer-window review t)))
     (kill-buffer review)))
 
-(defun ecc-review-pr--open-ediff (walk session range)
-  "Open the ediff review of RANGE, of the pull request WALK, for SESSION."
-  (require 'ecc-review-ediff)
-  (ecc-review-pr-opening walk
-    (ecc-review-ediff-range-buffer session range (ecc-review-pr-walk-root walk))))
-
 (defun ecc-review-pr--go (walk index)
   "Open the review of the INDEXth commit of WALK in place of this one.
+How the one left is replaced depends on what kind of review it is
+\(`ecc-review-pr--replace')."
+  (ecc-review-pr--replace walk ecc-review--session
+                          (ecc-review-pr-commit-range walk index)
+                          (current-buffer)))
+
+(cl-defgeneric ecc-review-pr--replace (walk session range from)
+  "Open RANGE of WALK for SESSION in place of the review FROM; return it.
 A diff review is followed in its window by the next, and kept while it
-has comments (`ecc-review-pr--leave').  An ediff review takes the
-frame, so it is quit, its comments held by WALK, and the next opened
-in its place; if that cannot be opened, the one quit comes back."
-  (let* ((from (current-buffer))
-         (session ecc-review--session)
-         (root (ecc-review-pr-walk-root walk))
-         (range (ecc-review-pr-commit-range walk index)))
-    (if (derived-mode-p 'ediff-mode)
-        (let ((left ecc-review--range))
-          (ecc-review-pr--hold walk)
-          (ecc-review-ediff-quit from)
-          (condition-case err
-              (ecc-review-pr--open-ediff walk session range)
-            (error
-             (ecc-review-pr--open-ediff walk session left)
-             (signal (car err) (cdr err)))))
-      (let ((buffer (ecc-review-range-buffer session range root))
-            (window (if (eq (window-buffer) from) (selected-window) (get-buffer-window from))))
-        (ecc-review-pr--adopt walk buffer)
-        (if (not (window-live-p window))
-            (ecc-review--display buffer session)
-          (set-window-buffer window buffer)
-          (select-window window)
-          (run-hook-with-args 'ecc-review-displayed-functions buffer))
-        (ecc-review-pr--leave from)
-        buffer))))
+has comments (`ecc-review-pr--leave').  `ecc-review-ediff' has the
+method of an ediff review, which takes the frame.  Run in FROM."
+  (let ((buffer (ecc-review-range-buffer session range (ecc-review-pr-walk-root walk)))
+        (window (if (eq (window-buffer) from) (selected-window) (get-buffer-window from))))
+    (ecc-review-pr--adopt walk buffer)
+    (if (not (window-live-p window))
+        (ecc-review--display buffer session)
+      (set-window-buffer window buffer)
+      (select-window window)
+      (run-hook-with-args 'ecc-review-displayed-functions buffer))
+    (ecc-review-pr--leave from)
+    buffer))
+
+(cl-defgeneric ecc-review-pr--refresh-header (_buffer)
+  "Draw the header of the review BUFFER again, its pull request recounted.
+Run in BUFFER.  `ecc-review-ediff' has the method of an ediff review,
+whose mode lines say it."
+  (force-mode-line-update))
 
 (defun ecc-review-pr--step (forward)
   "Open the next commit of this pull request when FORWARD, else the previous.
@@ -813,9 +802,7 @@ review of it opened, left, sent or killed."
                  (eq (buffer-local-value 'ecc-review--walk buffer) walk)
                  (ecc-review-buffer-p buffer))
         (with-current-buffer buffer
-          (if (derived-mode-p 'ediff-mode)
-              (ecc-review-direct-refresh-headers buffer)
-            (force-mode-line-update)))))))
+          (ecc-review-pr--refresh-header buffer))))))
 
 (defun ecc-review-pr--on-draw ()
   "Count the comments of the pull request again, this review's being drawn.
