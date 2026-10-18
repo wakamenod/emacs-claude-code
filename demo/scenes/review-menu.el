@@ -61,8 +61,8 @@ Called by demo.el."
   (demo-git "checkout" "-q" "-b" "feature")
   (demo-commit "greet" "greet.py" "def greet(name):\n    return \"hi \" + name\n")
   (demo-open-source)
-  (demo-say (format "ecc %s   ecc-use-spaces = %S   branches main < develop < feature"
-                    (ecc-version) ecc-use-spaces))
+  (demo-say (format "ecc %s   branches main < develop < feature"
+                    (ecc-version)))
   nil)
 
 (defun demo-open-source ()

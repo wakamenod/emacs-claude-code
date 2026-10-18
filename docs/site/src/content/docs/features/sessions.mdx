@@ -65,7 +65,7 @@ Recordings live under `~/.claude/projects`, so conversations from the terminal c
 
 ecc saves the open Spaces and sessions to `ecc-state.eld` in `user-emacs-directory` whenever a session or a tab opens or closes. `M-x ecc-restore` brings them back:
 
-- The Spaces open in their old order, with their sessions. With `ecc-use-spaces` off, only the sessions come back.
+- The Spaces open in their old order, with their sessions.
 - Each session comes back stopped. Its CLI starts when you send a prompt or press `R`.
 - A session that is already open, or whose directory is gone, is skipped. Running the command twice does no harm.
 
@@ -90,7 +90,7 @@ Tab line colors  2026-09-06 10:22  f6743727  1 hit
 
 ## Listing the sessions
 
-`C-c c b` opens the [sidebar](/emacs-claude-code/features/spaces/#the-sidebar), which lists every session with what it is waiting for. The sidebar needs Spaces on. Without them, `C-u C-c C-t` chooses from every session.
+`C-c c b` opens the [sidebar](/emacs-claude-code/features/spaces/#the-sidebar), which lists every session with what it is waiting for.
 
 ## The tab line
 
@@ -108,7 +108,7 @@ Each session window has a tab for each session of its project.
 
 The tab of the session in the window is bold and underlined. `(setq ecc-tab-blink nil)` stops the blinking.
 
-Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; with Spaces on, a session of another project opens in that project's Space. The `x` on a tab asks, then stops the session, and the window moves to the next tab. `(setq ecc-tab-close-confirm nil)` skips the question.
+Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; a session of another project opens in that project's Space. The `x` on a tab asks, then stops the session, and the window moves to the next tab. `(setq ecc-tab-close-confirm nil)` skips the question.
 
 <Video name="switch" label="The session window changing from one session to another: the selected tab moves from records to notes and the transcript is replaced" />
 

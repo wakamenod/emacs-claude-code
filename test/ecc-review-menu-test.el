@@ -923,8 +923,7 @@ opened in another, and that is where the review opens."
     (ecc-review-menu-test--repo directory)
     (ecc-test-with-fake-session first
       (setf (ecc-session-project-root first) directory)
-      (let ((ecc-use-spaces t)
-            (was tab-bar-mode)
+      (let ((was tab-bar-mode)
             (started nil)
             (tabs (length (funcall tab-bar-tabs-function)))
             (tab (tab-bar--current-tab-index))
@@ -964,8 +963,7 @@ opened in another, and that is where the review opens."
   "Run BODY with Spaces on and two tabs, \"parent\" and \"menu\", in \"menu\".
 The tab bar is left as the tests of Spaces leave it."
   (declare (indent 0))
-  `(let ((ecc-use-spaces t)
-         (was tab-bar-mode))
+  `(let ((was tab-bar-mode))
      (unwind-protect
          (progn
            (tab-bar-rename-tab "parent")

@@ -26,11 +26,11 @@
 ;; and takes its baseline without `ecc-worktree' or `ecc-review'; and
 ;; `ecc-proc' alone names the MCP server on the command line.
 ;;
-;; The last are about `ecc-window', `ecc-display' and the Spaces above
-;; them: `ecc-window' calls into no module that requires it, nor does
-;; `ecc-display', which shows a session; and a recording opened under `spaces', a project focused
-;; and a command that asks which project it is in all reach the Space,
-;; which is a method there only once `ecc-space' has been loaded.
+;; The last are about `ecc-window', `ecc-display' and the Spaces:
+;; `ecc-window' calls into no module that requires it, and
+;; `ecc-display', which shows a session, into none but the sidebar; a
+;; recording opened cold is shown in a Space with the sidebar, and a
+;; command that asks which project it is in reads the Space of the tab.
 
 ;;; Code:
 
@@ -105,8 +105,8 @@ printed and read back, so it must have a printed representation."
 (ert-deftest ecc-load-test-chat-buffer-has-module-keys ()
   "A chat buffer has the keys of the modules above `ecc-chat', whatever made it.
 The keymaps are defined in `ecc-chat', and `ecc-prompt', `ecc-session',
-`ecc-queue', `ecc-hint', `ecc-tui', `ecc-display' and `ecc-transient'
-give them their keys; `ecc-session-ensure-buffer', in `ecc-chat' too, loads the whole
+`ecc-queue', `ecc-hint', `ecc-tui', `ecc-display', `ecc-btw' and
+`ecc-transient' give them their keys; `ecc-session-ensure-buffer', in `ecc-chat' too, loads the whole
 package before it makes the buffer.  Most of the ways to a buffer -- a
 recording read back, the terminal, an answer from anywhere, a Space --
 load `ecc-chat' and never `ecc-prompt' or `ecc-transient', so without
@@ -135,13 +135,14 @@ every path makes one: `ecc-chat' required and
                                      (lookup-key ecc-chat-transcript-map (kbd "t"))
                                      (lookup-key ecc-chat-transcript-map (kbd "?"))
                                      (key-binding (kbd "C-c C-t"))
+                                     (key-binding (kbd "C-c C-b"))
                                      (and (memq #'ecc-hint--setup-mode-line
                                                 ecc-chat-mode-hook)
                                           t))))))
                    (list feature #'ecc-prompt-send #'ecc-session-visit
                          #'ecc-prompt-capf #'ecc-queue-show
                          #'ecc-hint-accept-suggestion #'ecc-menu
-                         #'ecc-tui-open #'ecc-menu #'ecc-switch-session t)))))
+                         #'ecc-tui-open #'ecc-menu #'ecc-switch-session #'ecc-btw-show t)))))
 
 ;; The test above makes the buffer the way every path does; this one
 ;; takes the one path that loads no more than `ecc-chat' on its own,
@@ -605,12 +606,18 @@ requires it.  Showing a session, which needs the buffer `ecc-chat'
 makes, is `ecc-display', above both."
   (should (equal (ecc-load-test--upward 'ecc-window) nil)))
 
-(ert-deftest ecc-load-test-display-reaches-up-to-nothing ()
-  "`ecc-display' calls into nothing above it.
+(ert-deftest ecc-load-test-display-reaches-up-to-the-sidebar-alone ()
+  "`ecc-display' calls into nothing above it but the sidebar.
 Everything that shows a session requires it, so a `declare-function' or
-a `require' inside a function of it that named one of those would be a
-call into what loads it; a reference added here fails this."
-  (should (equal (ecc-load-test--upward 'ecc-display) nil)))
+a `require' inside a function of it that names one of those is a call
+into what loads it.  The one kept is the sidebar, put in every new
+Space tab and redrawn when a Space closes; a reference added here fails
+this, and one taken away is struck off."
+  (should (equal (ecc-load-test--upward 'ecc-display)
+                 '((declare ecc-sidebar-redraw ecc-sidebar)
+                   (declare ecc-sidebar-show ecc-sidebar)
+                   (require ecc-sidebar ecc-sidebar)
+                   (require ecc-sidebar ecc-sidebar)))))
 
 (ert-deftest ecc-load-test-only-chat-loads-the-package ()
   "No module but `ecc-chat' loads `ecc' at run time.
@@ -628,13 +635,11 @@ it."
                    '("ecc-chat.el")))))
 
 (ert-deftest ecc-load-test-spaces-reached-from-a-recording ()
-  "A recording opened under `spaces' is shown in a Space, in an Emacs of its own.
-`ecc-display' loads nothing of `ecc-space': the Space is a method that is
-there once `ecc-space' is loaded, and before that the `classic' answer
-is the one given.  So whatever shows a session has to have loaded it,
-or a session under `spaces' lands in a window role with no word said.
+  "A recording opened cold is shown in a Space, in an Emacs of its own.
 `ecc-history-open' is a way in that starts no CLI, and its autoload
-loads `ecc-history' and nothing above it."
+loads `ecc-history' and nothing above it; it shows the session through
+`ecc-display', which makes the Space.  Making the session buffer loads
+the rest of the package, `ecc-space' with it."
   (let ((fixture (ecc-test-history-fixture "session")))
     (should (equal (ecc-load-test--run
                     `(let* ((root (make-temp-file "ecc-load-history" t))
@@ -646,46 +651,54 @@ loads `ecc-history' and nothing above it."
                              (copy-file ,fixture (expand-file-name
                                                   (concat id ".jsonl") project))
                              (require 'ecc-history)
-                             (setq ecc-history-directory root
-                                   ecc-use-spaces t)
+                             (setq ecc-history-directory root)
                              (ecc-history-open id)
                              (list (featurep 'ecc-space)
                                    (and (frame-parameter nil 'ecc-space-tabs) t)))
                          (delete-directory root t))))
                    '(t t)))))
 
-(ert-deftest ecc-load-test-focus-project-cold-reaches-the-space ()
-  "A project focused in an Emacs that has loaded nothing of ecc gets its Space.
-`ecc-focus-project' is defined in `ecc-display', which loads nothing of
-`ecc-space', and under `spaces' the answer is a method of `ecc-space':
-an autoload that loaded `ecc-display' alone would give the `classic' one, which
-refuses a project with no session.  Its autoload loads the package."
-  (should (equal (ecc-load-test--run
-                  `(let ((root (file-name-as-directory
-                                (make-temp-file "ecc-load-focus" t))))
-                     (unwind-protect
-                         (progn
-                           (load "ecc-autoloads" nil t)
-                           ;; A Space with nothing running starts a CLI.
-                           (setq ecc-use-spaces t
-                                 ecc-space-always-session nil)
-                           (list (condition-case error
-                                     (progn (ecc-focus-project root) 'ok)
-                                   (error error))
-                                 (featurep 'ecc-space)
-                                 (length (tab-bar-tabs))))
-                       (delete-directory root t))))
-                 '(ok t 2))))
+(ert-deftest ecc-load-test-the-first-space-has-the-sidebar ()
+  "The first Space tab of an Emacs shows the sidebar, and so does the next.
+A tab carries its own windows, so `ecc-display' puts the sidebar in
+every Space tab it makes, from the first one on: not only once the
+sidebar has been shown by hand, which is what a subscription of the
+sidebar's own would give.  The way in is a recording opened cold, which
+starts no CLI."
+  (let ((fixture (ecc-test-history-fixture "session")))
+    (should (equal (ecc-load-test--run
+                    `(let* ((root (make-temp-file "ecc-load-history" t))
+                            (project (expand-file-name "-tmp-project" root))
+                            (other (file-name-as-directory
+                                    (make-temp-file "ecc-load-other" t)))
+                            (id "24a1aa86-d53f-4457-b09e-4f4caf450f03"))
+                       (unwind-protect
+                           (progn
+                             (make-directory project t)
+                             (copy-file ,fixture (expand-file-name
+                                                  (concat id ".jsonl") project))
+                             (require 'ecc-history)
+                             (setq ecc-history-directory root)
+                             (ecc-history-open id)
+                             (let ((first (and (get-buffer-window "*ecc-sidebar*") t)))
+                               (ecc-space--select-tab (ecc-space-of-root other))
+                               (list first
+                                     (and (get-buffer-window "*ecc-sidebar*") t)
+                                     (length (tab-bar-tabs)))))
+                         (delete-directory root t)
+                         (delete-directory other t))))
+                   '(t t 3)))))
 
 (ert-deftest ecc-load-test-context-root-cold-reads-the-space ()
   "A command that asks which project it is in counts the Space showing, cold.
-Under `spaces' the tab showing is the second answer, after the buffer in
-front of the user, and the Space of a tab is known to `ecc-space' alone.
-A tab can be a Space before `ecc-space' is loaded -- `desktop-save-mode'
-puts back the tabs of a frame and its parameters -- so the commands that
-start a session, the worktree ones and the review of a range load the
-package before they ask.  Each reader runs in an Emacs of its own: once
-one has loaded the package the others would have it too."
+The tab showing is the second answer, after the buffer in front of the
+user, and the Space of a tab is known to `ecc-display'.  A tab can be a
+Space before anything of ecc is loaded -- `desktop-save-mode' puts back
+the tabs of a frame and its parameters -- and the commands that start a
+session, the worktree ones and the review of a range all reach
+`ecc-display' through what they require.  Each reader runs in an Emacs
+of its own: once one has loaded the package the others would have it
+too."
   (dolist (case '((ecc-lifecycle (car (ecc-start--read-arguments)))
                   (ecc-worktree (ecc-worktree-context-root))
                   (ecc-review (cdr (ecc-review-context)))))
@@ -696,7 +709,6 @@ one has loaded the package the others would have it too."
                            (progn
                              (load "ecc-autoloads" nil t)
                              (require ',(car case))
-                             (setq ecc-use-spaces t)
                              ;; A Space tab as a restored desktop leaves it.
                              (let ((key (ecc-window-project-key root)))
                                (tab-bar-new-tab)
@@ -705,7 +717,7 @@ one has loaded the package the others would have it too."
                                 nil 'ecc-space-tabs (list (cons key "restored")))
                                (list ',(car case)
                                      (equal ,(cadr case) key)
-                                     (featurep 'ecc-space))))
+                                     (featurep 'ecc-display))))
                          (delete-directory root t))))
                    (list (car case) t t)))))
 

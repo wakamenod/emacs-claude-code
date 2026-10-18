@@ -51,15 +51,16 @@
 ;; the answers to a request waiting for one, `ecc-review' the comment
 ;; and the edit on such a request, `ecc-history' what the button above
 ;; the first turn reads, `ecc-display' the switch to another session,
-;; and the queue, the hint, the terminal and the menu a key or two
-;; each.  They all build on this file, so the dependency runs one way: `ecc-chat-mode'
-;; loads nothing.  What makes a session buffer is at the end of this
-;; file, `ecc-session-ensure-buffer', and it loads the whole package
-;; before it makes one (`ecc--require-package'), so that every buffer
-;; has the keys of every module whichever way it was reached.  A key
-;; bound in the maps here, by a user after this file is loaded, wins over
-;; theirs whatever loads next.  The mode line is put together the same way:
-;; `ecc-hint' adds its part from `ecc-chat-mode-hook'.
+;; `ecc-btw' the side question, and the queue, the hint, the terminal
+;; and the menu a key or two each.  They all build on this file, so
+;; the dependency runs one way: `ecc-chat-mode' loads nothing.  What
+;; makes a session buffer is at the end of this file,
+;; `ecc-session-ensure-buffer', and it loads the whole package before
+;; it makes one (`ecc--require-package'), so that every buffer has the
+;; keys of every module whichever way it was reached.  A key bound in
+;; the maps here, by a user after this file is loaded, wins over
+;; theirs whatever loads next.  The mode line is put together the same
+;; way: `ecc-hint' adds its part from `ecc-chat-mode-hook'.
 ;;
 ;; A request waiting for an answer is answered from the prompt region
 ;; too, without walking to it: `ecc-perm' puts the allow and the deny
@@ -82,7 +83,6 @@
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-window)
-(require 'ecc-btw)
 
 (defvar show-paren-predicate)
 
@@ -217,7 +217,6 @@ PARENT is added once however often the module is loaded."
     ;; `keyboard-quit', which is what the finger meant.
     (define-key map (kbd "C-c C-n") #'ecc-chat-next-turn)
     (define-key map (kbd "C-c C-p") #'ecc-chat-previous-turn)
-    (define-key map (kbd "C-c C-b") #'ecc-btw-show)
     map)
   "Keymap of `ecc-chat-mode', in force in the prompt region.
 Everything here is RET, TAB, a movement key or a key under the mode

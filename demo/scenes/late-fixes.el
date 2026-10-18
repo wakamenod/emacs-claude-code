@@ -68,8 +68,7 @@
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t
-        ecc-space-always-session t
+  (setq ecc-space-always-session t
         ;; The machine's own default may allow a Write without asking,
         ;; and then the answering keys have nothing to answer.
         ecc-permission-mode "default"

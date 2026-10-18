@@ -91,11 +91,8 @@ M-x customize-group RET ecc
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
-| `ecc-use-spaces` | `t` | プロジェクトごとにタブを作る。`nil` ならタブを使わず、トランスクリプトを[サイドウィンドウ](/emacs-claude-code/ja/features/spaces/#space-を使わないとき)に開く |
 | `ecc-space-always-session` | `t` | 何も動いていない Space を開くとセッションを始め、最後のセッションを閉じると Space も閉じる |
 | `ecc-sidebar-width` | `28` | サイドバーの幅 |
-| `ecc-window-large-frame-min-height` | `80` | Space がオフのとき: 3 つ目のセッションウィンドウに必要なフレームの高さ（行数） |
-| `ecc-window-sub-height` | `0.33` | Space がオフのとき: 3 つ目のセッションウィンドウの高さ |
 
 ## 補助バッファとポップアップ
 

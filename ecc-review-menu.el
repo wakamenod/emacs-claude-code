@@ -750,9 +750,9 @@ INDEX.  Nothing is selected when that tab is the current one."
 With `ecc-start', which names it when NAME is nil.  It is called when a
 review is opened after \\`S' chose a new session: the session is shown
 where a new one is, and the review opens where the menu was, in its tab
-and its window.  With `ecc-use-spaces' the session may have gone to a
-Space of its own, in a tab `ecc-start' switched to; that is switched
-back from, by the index and the name the menu's tab had
+and its window.  The session may have gone to a Space of its own, in a
+tab `ecc-start' switched to; that is switched back from, by the index
+and the name the menu's tab had
 \(`ecc-review-menu--back-to-tab'), and so it is when `ecc-start' fails
 part of the way."
   (let ((directory (or (plist-get (ecc-review-menu--current-state) :directory)

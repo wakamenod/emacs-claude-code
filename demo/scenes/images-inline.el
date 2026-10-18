@@ -61,8 +61,7 @@
 
 (defun demo-scene-build ()
   "Build the project, draw the pictures and open it."
-  (setq ecc-use-spaces t
-        demo-counter 0)
+  (setq demo-counter 0)
   ;; A project of this scene's own.  `demo-root' is one path for
   ;; every scene, and `demo-fresh-repository' deletes it: a second
   ;; scene starting while this one runs took the worktrees of this

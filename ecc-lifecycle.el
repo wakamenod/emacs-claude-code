@@ -79,14 +79,12 @@
   (ecc-window-project-root))
 
 (defun ecc-context-project-root ()
-  "Return the project a command should act in, the package loaded first.
-It is `ecc-window-context-project-root', which under `spaces' counts
-the tab showing as the user's choice of project -- and which tab is a
-Space only `ecc-space' knows.  A tab can be one before anything of ecc
-has run, `desktop-save-mode' putting back the tabs of a frame and its
-parameters, so a command that asks this before it has made a session
-loads the package to ask it."
-  (ecc--require-package)
+  "Return the project a command should act in.
+It is `ecc-window-context-project-root', which counts the Space of the
+tab showing as the user's choice of project.  A tab can be a Space
+before anything of ecc has run, `desktop-save-mode' putting back the
+tabs of a frame and its parameters, and `ecc-display', which knows the
+Spaces, is loaded with this file."
   (ecc-window-context-project-root))
 
 (defun ecc--enable-session-modes ()

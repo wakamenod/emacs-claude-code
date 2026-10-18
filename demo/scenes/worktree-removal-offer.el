@@ -79,7 +79,6 @@ say how many were asked since."
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t)
   (setq ecc-space-always-session t)
   (setq demo-sessions nil
         demo-answers nil
@@ -96,9 +95,8 @@ say how many were asked since."
   "Show the project, and say which ecc this is."
   (find-file (expand-file-name "greet.py" demo-root))
   (ecc-sidebar-show)
-  (demo-say (format "ecc from %s   --   layout %S"
-                    (abbreviate-file-name (locate-library "ecc-worktree"))
-                    ecc-use-spaces))
+  (demo-say (format "ecc from %s"
+                    (abbreviate-file-name (locate-library "ecc-worktree"))))
   nil)
 
 ;;;; What git and the model say

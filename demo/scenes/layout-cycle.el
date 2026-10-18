@@ -30,9 +30,8 @@
   (demo-git "add" ".")
   (demo-git "commit" "-q" "-m" "first")
   (find-file (expand-file-name "greet.py" demo-root))
-  (demo-say (format "ecc from %s · ecc-use-spaces %s"
-                    (abbreviate-file-name (locate-library "ecc"))
-                    ecc-use-spaces))
+  (demo-say (format "ecc from %s"
+                    (abbreviate-file-name (locate-library "ecc"))))
   nil)
 
 (defun demo-start-session (name)

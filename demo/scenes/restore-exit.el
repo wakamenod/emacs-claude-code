@@ -31,8 +31,7 @@
 
 (defun demo-restore-use-file ()
   "Point `ecc-restore-file' at the file both halves share."
-  (setq ecc-use-spaces t
-        ecc-restore-file demo-restore-file))
+  (setq ecc-restore-file demo-restore-file))
 
 ;;;; Saying what is there
 

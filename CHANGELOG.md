@@ -191,6 +191,32 @@ Verified against **Claude Code CLI 2.1.290**.
   `ecc-display-chat-map`, which it hangs under `ecc-chat-mode-map`, so a
   `C-c C-t` of your own there still wins. Every key and every window is as
   before.
+- `C-c C-b` in a session buffer is bound in a keymap of `ecc-btw.el`,
+  `ecc-btw-chat-map`, which it hangs under `ecc-chat-mode-map`, and
+  `ecc-chat.el` no longer requires `ecc-btw`. A `C-c C-b` of your own in
+  `ecc-chat-mode-map` still wins.
+- What a Space is and how a session is shown in one are in
+  `ecc-display.el`, below every module that shows a session: the
+  `ecc-space` struct and `ecc-space-list`, `-of-root`, `-at-p`,
+  `-tab-roots`, `-current`, `-forget` and the rest of the model, the tabs,
+  the layouts of `ecc-space-cycle-layout`, `ecc-space-display-session`
+  and `ecc-space-display-beside-session`, all under the same names, with
+  `ecc-space-always-session`. So are the session picker,
+  `ecc-window-read-session` and `ecc-window-resolve-session`, and
+  `ecc-window-context-project-root`, which read the Spaces. `ecc-space.el`
+  keeps the commands -- `ecc-space-goto`, `-jump`, `-close`, `-zoom`,
+  `-cycle-layout` -- the Space picker, `ecc-space-select` and what closes
+  a Space when its last session goes. `ecc-window.el` keeps the projects,
+  the source buffers and the regions, and names nothing above it.
+  Restoring and removing a worktree no longer load `ecc-space` to reach a
+  Space. Saving the open sessions reads the frame's tabs without making
+  its first one, which had scheduled a second save from inside the first.
+- **Behaviour change.** Showing a session starts nothing. A worktree's
+  repository opened on the way to it -- a session started in the
+  worktree, a recording of it opened, a restore -- comes up as a tab with
+  no session in it. Going there with `C-c c j`, a number in the sidebar or
+  `RET` on its row starts one, under `ecc-space-always-session`, as going
+  to any empty Space does.
 
 ### Fixed
 
@@ -228,16 +254,35 @@ Verified against **Claude Code CLI 2.1.290**.
   what it waits on. A recording is deleted with `ecc-delete-recording`,
   also `d` in `ecc-resume-menu`, and Capabilities are `C` in `ecc-menu`.
   `ecc-dashboard` stays as an obsolete alias of `ecc-sidebar-focus`, so a
-  key of your own bound to it opens the sidebar. The sidebar needs
-  `ecc-use-spaces`, which is on by default. The `⚠ecc:N` indicator in the
-  mode line, which opened the dashboard on `mouse-1`, now goes to the next
-  waiting request, as `C-c c n` does.
+  key of your own bound to it opens the sidebar. The `⚠ecc:N` indicator in
+  the mode line, which opened the dashboard on `mouse-1`, now goes to the
+  next waiting request, as `C-c c n` does.
 - **Breaking.** What only the dashboard showed, with nothing in its place:
   the header line's count of waiting, running and idle sessions, the total
   cost and the worst rate limit as a bar; the model, last prompt, last
   answer time and cost columns; and its `S`, the skills of the row's
   session (`M-x ecc-skill-show` and `/skills` in the prompt still show
   them). `M-x ecc-usage` (`C-c c U`) still shows the rate limits.
+- **Breaking.** The layout without Spaces, with transcripts in side
+  windows with the roles main, sub-1 and sub-2. Every project has a Space,
+  a tab of its own, and every session is shown in the Space of its
+  project. `ecc-use-spaces` is no longer a setting: it has no effect, and
+  an init that sets it is warned when it is compiled. If yours set it to
+  nil, sessions now open in a tab per project beside its source, the
+  sidebar and the Space commands (`C-c c j`, `C-c c V`, `C-c c z`) work,
+  and `ecc-show-session` (`C-c c v`) goes to the session's tab.
+- **Breaking.** If you use the tab bar for other work, a transcript no
+  longer opens in a side window of the tab you are in: starting,
+  answering or resuming a session from another tab switches to the
+  session's Space. A review Claude opens is still shown without leaving
+  your tab.
+- **Breaking.** `ecc-window-large-frame-min-height` and
+  `ecc-window-sub-height`, and the variables `ecc-window-use-side-window`,
+  `ecc-window-side` and `ecc-window-height`. All five are obsolete and
+  have no effect. `ecc-window-width` keeps its name and is now only the
+  width of the session column of a Space.
+- **Breaking.** `ecc-focus-project`. `C-c c j` goes to a project's Space,
+  and `C-c c V` lays it out again.
 
 ## [0.4.5] - 2026-10-14
 

@@ -446,7 +446,7 @@ Emacs 29.1 has no `tab-bar-tab-post-select-functions' -- it arrived in
 30.1 (verified 2026-09-14) -- so on 29.1 the change is noticed from
 `window-configuration-change-hook' instead, which is where selecting a
 tab shows up."
-  (let ((key (and ecc-use-spaces (ecc-space-current-key))))
+  (let ((key (ecc-space-current-key)))
     (unless (equal key ecc-sidebar--last-space)
       (setq ecc-sidebar--last-space key)
       (ecc-sidebar-redraw))))
@@ -734,8 +734,8 @@ while working, and it is `no-other-window' for the same reason."
 ;;;###autoload
 (defun ecc-sidebar-hide ()
   "Take the sidebar off the screen, leaving its buffer alive.
-Only this window: `window-toggle-side-windows' would take the session
-windows of the `classic' layout down with it."
+Only this window: `window-toggle-side-windows' would take every other
+side window of the frame down with it."
   (interactive)
   (when-let* ((window (ecc-sidebar--window)))
     (delete-window window))

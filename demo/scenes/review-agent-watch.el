@@ -55,8 +55,8 @@
   (demo-git "commit" "-q" "-m" "first")
   (find-file (expand-file-name "calc.py" demo-root))
   (delete-other-windows)
-  (demo-say (format "ecc %s   ecc-use-spaces = %S   ecc-review-auto-refresh = %S"
-                    (ecc-version) ecc-use-spaces ecc-review-auto-refresh))
+  (demo-say (format "ecc %s   ecc-review-auto-refresh = %S"
+                    (ecc-version) ecc-review-auto-refresh))
   nil)
 
 (defun demo-start-session ()

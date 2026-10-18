@@ -65,8 +65,7 @@ being asked at all is part of what the old code did (2026-09-18)."
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t
-        demo-session nil
+  (setq demo-session nil
         demo-old-process nil
         demo-asked nil)
   (advice-add 'y-or-n-p :override #'demo-answer-no)

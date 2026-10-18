@@ -55,7 +55,6 @@ stops sessions, and the checkouts it made stay on disk."
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t)
   (setq ecc-space-always-session t)
   (setq demo-sessions nil)
   (advice-add 'yes-or-no-p :override #'demo-answer)
@@ -74,8 +73,8 @@ stops sessions, and the checkouts it made stay on disk."
 (defun demo-open-source ()
   "Show the project, and say which ecc and which layout this is."
   (find-file (expand-file-name "greet.py" demo-root))
-  (demo-say (format "ecc-use-spaces = %S   ecc-space-always-session = %S   ecc from %s"
-                    ecc-use-spaces ecc-space-always-session
+  (demo-say (format "ecc-space-always-session = %S   ecc from %s"
+                    ecc-space-always-session
                     (abbreviate-file-name (locate-library "ecc-space"))))
   nil)
 

@@ -34,17 +34,20 @@ session, and `ecc-transient.el` the menu. The boundaries that are rules:
   run-time `(require 'ecc)` in the package), so every buffer has every module's keys.
   The prompt region lives after `ecc-render--prompt-start` in the same buffer, and no
   redraw deletes past it.
-- `ecc-window.el` (projects, sources, regions, which session) sits below `ecc-chat.el`
-  and names nothing above it; `ecc-display.el`, above `ecc-chat.el` and below every
-  module that shows a session, is what shows one. Neither requires `ecc-space.el`: the
-  Spaces are built on top of the windows, not inside them. What depends on the layout
-  is a generic function of `ecc-window.el` or `ecc-display.el` dispatching on
-  `ecc-window--layout`, with the `classic` answer as its default, and `ecc-space.el`
-  specialises it on `spaces`; with that setting off nothing reaches `ecc-worktree.el`,
-  `ecc-space.el` or `ecc-sidebar.el`. A method of `ecc-space.el` exists only once it is
-  loaded, so a command that can reach one of those generic functions before a session
-  exists loads the whole package first: autoloaded from `ecc` when it is defined in
-  `ecc-window.el` or `ecc-display.el`, through `ecc--require-package` otherwise.
+- The display is layered, bottom up: `ecc-window.el` (projects, sources, regions) <
+  `ecc-chat.el` < `ecc-display.el` (showing a session, the Space model, the layouts, the
+  session picker) < every module that shows a session < `ecc-space.el` (the commands on
+  a Space, its picker, the session a Space starts) < `ecc-sidebar.el`. `ecc-window.el`
+  names nothing above it, and `ecc-display.el` nothing but `ecc-sidebar-show` and
+  `ecc-sidebar-redraw`, kept so that every new Space tab has the sidebar. Showing a
+  session starts nothing: `ecc-start` is above `ecc-display.el`, so a Space opened on
+  the way to a session -- a worktree's repository, a restored tab -- comes up empty, and
+  `ecc-space-select` is what starts a session in one.
+- A module below calls up through a generic function that the module above specialises
+  only where that is the design, as the review style does (`ecc-review--open` and
+  `ecc-review--open-range`, whose `ediff` methods are in `ecc-review-ediff.el`). A
+  method exists only once its module is loaded, so a command that can reach such a
+  generic before a session exists calls `ecc--require-package` first.
 
 Each script in `scripts/` says in its own header what it is and how to run it. Run
 `scripts/bench-render.el` before and after touching the renderer. The documentation site

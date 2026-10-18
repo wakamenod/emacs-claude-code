@@ -70,8 +70,7 @@ Line 20 is the one the first Edit changes.")
 
 (defun demo-scene-build ()
   "Build the project.  Called by demo.el."
-  (setq ecc-use-spaces t
-        demo-counter 0)
+  (setq demo-counter 0)
   (setq demo-root "/tmp/ecc-demo-visit-source/")
   (demo-fresh-repository)
   ;; What is on disk is what both Edits left: the line the first one
