@@ -78,12 +78,10 @@
 (require 'ecc-diff)
 (require 'ecc-visual)
 
-(declare-function ecc-history-load-more "ecc-history" (session &optional n-turns))
-
 ;; The keymaps belong to `ecc-chat', which sits above this module; they
 ;; are looked up by name when the text is drawn.
 (defvar ecc-chat-transcript-map)
-(defvar ecc-chat-button-map)
+(defvar ecc-history-button-map)
 (defvar ecc-request-section-map)
 (defvar ecc-file-section-map)
 
@@ -1145,16 +1143,14 @@ there is none."
     (let ((start (point)))
       (insert-text-button
        "Load older messages"
-       'action (lambda (_button)
-                 (require 'ecc-history)
-                 (ecc-history-load-more session))
        'follow-link t
        'help-echo "Load the previous 50 turns")
       (insert "\n")
-      ;; The button's own keys, RET and mouse-2, sit on top of the keys
-      ;; of the transcript.
+      ;; The button has no action of its own: its keys, RET and
+      ;; mouse-2, are what `ecc-history' hangs under its keymap, on top
+      ;; of the keys of the transcript.
       (ecc-render--mark start (point) "history" 0
-                        (or (ecc-render--map 'ecc-chat-button-map)
+                        (or (ecc-render--map 'ecc-history-button-map)
                             (ecc-render--map 'ecc-chat-transcript-map)))
       (ecc-render--mark-heading start "history")
       (ecc-render--register "history" start (point) 0))))
@@ -1466,7 +1462,16 @@ A call that changes a file shows its input as a diff; DIFF is that
 diff when the caller has built it already, to build it only once."
   (let* ((input (ecc-model-node-get node 'input))
          (error-p (eq (ecc-node-status node) 'error))
-         (diff (or diff (ecc-render--tool-diff node))))
+         (diff (or diff (ecc-render--tool-diff node)))
+         ;; A Bash call that comes up open on the files it changed is
+         ;; its description and its diff: the heading already says the
+         ;; command, and one long line of it wrapped to five, with the
+         ;; output under it, stood between the two (2026-10-14).  Only
+         ;; files with hunks count; a call the CLI could not diff has a
+         ;; note and nothing else, so it keeps its command and output.
+         ;; An error keeps its output, as nothing else would say why the
+         ;; call failed.  RET and o draw all of it whole.
+         (bash-diff (ecc-render--bash-edit-files node)))
     (cond
      ((ecc-node-streaming node)
       (ecc-render--insert-lines (ecc-render--clip (ecc-model-streaming-text node)
@@ -1486,7 +1491,10 @@ diff when the caller has built it already, to build it only once."
      ;; up open on its diff had the diff buried under them (2026-10-13).
      ;; A pending request draws its input whole, as it has to be read
      ;; before it is answered, and RET shows this one whole.
-     (t (ecc-render--insert-input input body ecc-render-result-max-lines)))
+     (t (ecc-render--insert-input (if bash-diff
+                                      (assq-delete-all 'command (copy-alist input))
+                                    input)
+                                  body ecc-render-result-max-lines)))
     (when-let* ((status (ecc-model-node-get node 'task-status)))
       (insert (propertize (format "%stask: %s" body status) 'face 'ecc-dim-face) "\n"))
     (pcase (ecc-node-status node)
@@ -1497,7 +1505,8 @@ diff when the caller has built it already, to build it only once."
            ;; A result of nothing but an image has no text left once the
            ;; image has been taken out of it, and an empty one would be
            ;; drawn as a bare arrow pointing at nothing.
-           (unless (string-empty-p (string-trim text))
+           (unless (or (string-empty-p (string-trim text))
+                       (and bash-diff (not error-p)))
              (ecc-render--insert-lines
               (ecc-render--clip text ecc-render-result-max-lines)
               (concat body "→ ")
@@ -2339,7 +2348,7 @@ screen when the window has no mode line."
 (defun ecc-render--model-name (session)
   "Return the short name of the model SESSION runs, or nil.
 The CLI names a model in full, `claude-sonnet-4-5-20250929\='; the
-footer under the prompt and the dashboard have room for the part that
+footer under the prompt and the sidebar have room for the part that
 tells one from another.  The model of the last answer comes first, so
 that a `/model\=' shows as soon as it is sent; init answers until there
 has been one, and nothing does before the first turn."

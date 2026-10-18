@@ -62,8 +62,7 @@
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t
-        ecc-space-always-session t
+  (setq ecc-space-always-session t
         ;; The machine's own default may allow edits without asking,
         ;; and then `a' and `d' have nothing to answer.
         ecc-permission-mode "default"
@@ -87,9 +86,8 @@
 (defun demo-open-source ()
   "Show the project, and say which ecc this is."
   (find-file (expand-file-name "greet.py" demo-root))
-  (demo-say (format "ecc from %s   --   ecc-use-spaces = %S"
-                    (abbreviate-file-name (locate-library "ecc-sidebar"))
-                    ecc-use-spaces))
+  (demo-say (format "ecc from %s"
+                    (abbreviate-file-name (locate-library "ecc-sidebar"))))
   nil)
 
 ;;;; The sidebar itself

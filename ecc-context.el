@@ -42,14 +42,15 @@
 
 (require 'cl-lib)
 (require 'seq)
-(require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
 (require 'ecc-window)
+(require 'ecc-display)
 
 ;; Diagnostics are read from whichever checker the user runs; neither is
-;; a dependency of this package.
-(declare-function flymake-diagnostic-text "flymake" (diag &optional parts))
+;; a dependency of this package.  FILEONLY: Emacs 29.1's flymake defines
+;; `flymake-diagnostic-text' through a macro `check-declare' does not read.
+(declare-function flymake-diagnostic-text "flymake" (diag &optional parts) t)
 (declare-function flymake-diagnostic-beg "flymake" (diag) t)
 (declare-function flycheck-overlay-errors-in "ext:flycheck" (beg end))
 (declare-function flycheck-error-message "ext:flycheck" (err))

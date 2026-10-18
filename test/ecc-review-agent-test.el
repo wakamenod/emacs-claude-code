@@ -65,7 +65,7 @@
 
 (defun ecc-review-agent-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY, failing the test when it fails."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (cdr result)))
@@ -596,11 +596,11 @@ for a review whose right side is not checked out."
     (with-temp-buffer
       (setq default-directory directory)
       (let* ((asked 0)
-             (git (symbol-function 'ecc-review--git))
+             (git (symbol-function 'ecc-git-run))
              (what (lambda (range)
                      (setq ecc-review--range range
                            asked 0)
-                     (cl-letf (((symbol-function 'ecc-review--git)
+                     (cl-letf (((symbol-function 'ecc-git-run)
                                 (lambda (&rest args)
                                   (setq asked (1+ asked))
                                   (apply git args))))
@@ -894,7 +894,7 @@ can."
              (ecc-review-agent-test--git directory "add" "a.txt")
              (ecc-review-agent-test--git directory "commit" "-q" "-m" "init")
              (setf (ecc-session-project-root ,session) directory)
-             (should (ecc-review-ensure-baseline ,session))
+             (should (ecc-git-ensure-baseline ,session))
              (ecc-review-agent-test--write
               file "line1\nLINE2\nline3\nline4\nline5\nline6\nnew\nline7\nline8\nline10\n")
              (setq ,control (ecc-review-ediff-buffer ,session))

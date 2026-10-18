@@ -42,19 +42,17 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-proc)
-(require 'ecc-window)
 (require 'ecc-prompt)
 (require 'ecc-context)
-(require 'ecc-notify)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-session)
 (require 'ecc-perm)
 (require 'ecc-answer)
 (require 'ecc-history)
-(require 'ecc-review)
 (require 'ecc-review-menu)
 (require 'ecc-search)
-(require 'ecc-dashboard)
+(require 'ecc-capabilities)
 (require 'ecc-inline)
 (require 'ecc-tui)
 (require 'ecc-lifecycle)
@@ -319,13 +317,16 @@ the prefix argument."
 
 ;;;###autoload (autoload 'ecc-resume-menu "ecc-transient" nil t)
 (transient-define-prefix ecc-resume-menu ()
-  "Resume a session, forking the conversation or not.
+  "Resume a session, forking the conversation or not, or delete a recording.
 A prefix of its own for the reason `ecc-allow-all-menu\=' is: --fork sat
 at the head of the Session column and read as though Start and Kill took
-it too."
+it too.  Deleting a recording is a group of its own below for the same
+reason: --fork is nothing to it."
   ["Resume"
    ("-f" "Fork the conversation" "--fork")
    ("r" ecc-menu-resume)]
+  ["Recording"
+   ("d" "Delete a recording" ecc-delete-recording)]
   (interactive)
   (ecc--require-package)
   (transient-setup 'ecc-resume-menu))
@@ -388,7 +389,6 @@ before it draws anything."
     ("3" "Answer with option 3" ecc-answer-option-3)
     ("4" "Answer with option 4" ecc-answer-option-4)]
    ["View"
-    ("B" "Dashboard" ecc-dashboard)
     ("C" "Capabilities" ecc-capabilities-show)
     ("h" "History" ecc-history-open)
     ("/" "Search past sessions" ecc-search)

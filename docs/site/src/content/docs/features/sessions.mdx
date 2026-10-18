@@ -20,7 +20,7 @@ A session is a running `claude` process, its buffer and its name. The first sess
 
 ## Where a session starts
 
-`C-c c c` starts in the project of the file the current buffer visits, or of the directory a Dired buffer lists. From a transcript or the dashboard, it uses the project of the file you were in before. `C-u C-c c c` asks for the directory.
+`C-c c c` starts in the project of the file the current buffer visits, or of the directory a Dired buffer lists. From a transcript or the sidebar, it uses the project of the file you were in before. `C-u C-c c c` asks for the directory.
 
 :::caution[The directory is fixed when the CLI starts]
 A session cannot move to another directory. If it started in the wrong project, kill it and start again there. The echo area names the directory, and the header line names the project.
@@ -47,6 +47,8 @@ Two processes writing to one session ID branch its recording, and the CLI does n
 
 Recordings live under `~/.claude/projects`, so conversations from the terminal client are listed too. `C-c c h` opens a recording to read without starting a process; `r` in it resumes it. When a CLI process dies, ecc offers to resume it.
 
+`d` in the resume menu (`C-c c ? r d`), or `M-x ecc-delete-recording`, deletes a recording from disk. It lists the conversations `C-c c r` lists, always asks which one, then asks again, naming the session and its file. It refuses a session that is running, in this Emacs or in another process; stop it first. A stopped session keeps its buffer, with nothing left to resume.
+
 ## Restarting the CLI
 
 `R` in a session buffer, or `S` in the menu, stops the session's CLI and starts it again on the same conversation, in the same buffer. Use it when the CLI stops answering, or to pick up changed Claude Code settings, MCP servers or plugins. ecc asks first and keeps the permission mode. The session has to be idle: with a turn running, a request waiting or prompts queued, interrupt it first with `C-c C-z`. With a background task still running, wait for it to finish. On a stopped session, `R` resumes it.
@@ -63,7 +65,7 @@ Recordings live under `~/.claude/projects`, so conversations from the terminal c
 
 ecc saves the open Spaces and sessions to `ecc-state.eld` in `user-emacs-directory` whenever a session or a tab opens or closes. `M-x ecc-restore` brings them back:
 
-- The Spaces open in their old order, with their sessions. With `ecc-use-spaces` off, only the sessions come back.
+- The Spaces open in their old order, with their sessions.
 - Each session comes back stopped. Its CLI starts when you send a prompt or press `R`.
 - A session that is already open, or whose directory is gone, is skipped. Running the command twice does no harm.
 
@@ -80,31 +82,15 @@ Permission prompt rendering  2026-09-08 14:07  2d4f54c9  2 hits
     › how does the permission prompt decide which diff to show?
     ‹ …the block is drawn by `ecc-perm.el`, and a permission prompt keeps the tool input…
 
-Dashboard columns  2026-09-06 10:22  f6743727  1 hit
-    ‹ …an idle row is dimmed, and a permission prompt puts `!` in the gutter…
+Tab line colors  2026-09-06 10:22  f6743727  1 hit
+    ‹ …a tab waiting for a permission prompt blinks, and an idle one is dimmed…
 ```
 
 `›` marks your prompts and `‹` Claude's replies. `RET` or `o` opens the conversation, `n` and `p` move between conversations, and `g` searches again. Abandoned branches are searched too.
 
-## The dashboard
+## Listing the sessions
 
-`C-c c B` (`ecc-dashboard`) lists the sessions of this Emacs.
-
-![The dashboard listing four sessions: one waiting for an answer, one running, one idle and one that has exited](../../../assets/dashboard.png)
-
-Each row shows the name, state, project, model, last prompt, last answer time and cost. Sessions waiting for you come first, marked `!`. The header line totals the states and the cost, and shows the rate limits.
-
-| Key | Action |
-|---|---|
-| `RET` | Switch to the session |
-| `+` | Start a session |
-| `k` | Stop the session (asks first); the recording stays |
-| `D` | Delete the session's recording from disk |
-| `r` / `R` | Rename / resume the session |
-| `a` / `d` | Allow or deny its oldest request ([details](/emacs-claude-code/features/permissions/#answering-a-request)) |
-| `C` / `S` | Show its [capabilities](/emacs-claude-code/features/other/#capabilities) / skills |
-| `U` | Show [usage](/emacs-claude-code/features/other/#usage) |
-| `g` | Refresh |
+`C-c c b` opens the [sidebar](/emacs-claude-code/features/spaces/#the-sidebar), which lists every session with what it is waiting for.
 
 ## The tab line
 
@@ -122,7 +108,7 @@ Each session window has a tab for each session of its project.
 
 The tab of the session in the window is bold and underlined. `(setq ecc-tab-blink nil)` stops the blinking.
 
-Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; with Spaces on, a session of another project opens in that project's Space. The `x` on a tab asks, then stops the session, and the window moves to the next tab. `(setq ecc-tab-close-confirm nil)` skips the question.
+Clicking a tab switches the window to that session. `C-c C-t` in a session buffer chooses from the window's tabs, and `C-u C-c C-t` from every session; a session of another project opens in that project's Space. The `x` on a tab asks, then stops the session, and the window moves to the next tab. `(setq ecc-tab-close-confirm nil)` skips the question.
 
 <Video name="switch" label="The session window changing from one session to another: the selected tab moves from records to notes and the transcript is replaced" />
 
@@ -134,7 +120,7 @@ The header line under the tabs shows the session's status, the project, and the 
 
 A session waiting for an answer shows in three places:
 
-- `⚠ecc:N` in every mode line counts the waiting requests of all sessions; clicking it opens the dashboard.
+- `⚠ecc:N` in every mode line counts the waiting requests of all sessions; clicking it jumps to the next one, as `C-c c n` does.
 - Its tab blinks.
 - A notification, set by `ecc-notify-level` (`'message`, `'pulse`, `'desktop` or `nil`) and `ecc-notify-events`.
 

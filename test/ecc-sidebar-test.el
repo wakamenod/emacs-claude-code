@@ -40,12 +40,11 @@ when BODY runs, and everything is put back afterwards."
           (ecc-window--project-root-cache (make-hash-table :test #'equal))
           (ecc-window--project-source-buffers nil)
           (ecc-window--last-source-buffer nil)
-          (ecc-worktree--cache (make-hash-table :test #'equal))
+          (ecc-git--cache (make-hash-table :test #'equal))
           (ecc-sidebar-test--tabs-was (frame-parameter nil 'ecc-space-tabs))
           (ecc-space--used nil)
           (ecc-sidebar--collapsed nil)
           (ecc-sidebar-sessions-sort 'spaces)
-          (ecc-use-spaces nil)
           (ecc-visual-enable-spinner nil)
           (sessions (mapcar (lambda (entry)
                               (ecc-model-create-session
@@ -59,12 +58,12 @@ when BODY runs, and everything is put back afterwards."
          (cl-letf (((symbol-function 'project-current) (lambda (&rest _) nil))
                    ((symbol-function 'ecc-proc-send-json)
                     (lambda (_session object) object))
-                   ((symbol-function 'ecc-worktree-main)
+                   ((symbol-function 'ecc-git-main-worktree)
                     (lambda (root)
                       (and (member root (list ecc-sidebar-test--work
                                               ecc-sidebar-test--work-2))
                            ecc-sidebar-test--one)))
-                   ((symbol-function 'ecc-worktree-branch)
+                   ((symbol-function 'ecc-git-branch)
                     (lambda (root)
                       (cond ((equal root ecc-sidebar-test--work)
                              "worktree/feat-x")
@@ -72,7 +71,7 @@ when BODY runs, and everything is put back afterwards."
                              "worktree/feat-y")
                             ((equal root ecc-sidebar-test--one) "main")
                             (t "master"))))
-                   ((symbol-function 'ecc-worktree-ahead-behind)
+                   ((symbol-function 'ecc-git-ahead-behind)
                     (lambda (root)
                       (and (equal root ecc-sidebar-test--one) '(2 . 0))))
                    ;; Going to a Space with nothing running starts a
@@ -82,7 +81,7 @@ when BODY runs, and everything is put back afterwards."
            (with-current-buffer (get-buffer-create ecc-sidebar-buffer-name)
              (unless (derived-mode-p 'ecc-sidebar-mode) (ecc-sidebar-mode))
              (ecc-sidebar-redraw)
-             ,@body))
+             (ecc-test-keeping-the-frame ,@body)))
        (set-frame-parameter nil 'ecc-space-tabs ecc-sidebar-test--tabs-was)
        (mapc #'ecc-test-cleanup-session sessions)
        (when-let* ((buffer (get-buffer ecc-sidebar-buffer-name)))
@@ -274,54 +273,39 @@ says nothing the second time."
 ;;;; The keys
 
 (ert-deftest ecc-sidebar-test-return-goes-there ()
-  "RET on a session shows it; RET on a Space goes to the project."
+  "RET on a session shows it; RET on a Space goes to the Space's tab."
   (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
                                     ("two" . ,ecc-sidebar-test--two))
     (let ((selected nil)
-          (focused nil)
           (tabbed nil))
       (cl-letf (((symbol-function 'ecc-window-select-session)
                  (lambda (session) (setq selected session)))
                 ;; The real `ecc-space-select' runs, so that what is
-                ;; tested is the branch it takes.
-                ((symbol-function 'ecc-focus-project)
-                 (lambda (root &rest _) (setq focused root)))
+                ;; tested is the way it goes.
                 ((symbol-function 'ecc-space--select-tab)
                  (lambda (space) (setq tabbed (ecc-space-root space)))))
         ;; A session row.
         (ecc-sidebar-test--goto "· one")
         (ecc-sidebar-visit)
         (should (eq selected (car sessions)))
-        ;; A Space row, under `classic': the old way of focusing, and
-        ;; no tab made.
+        (should-not tabbed)
+        ;; A Space row: its tab.
+        (setq selected nil)
         (ecc-sidebar-test--goto "project-two")
         (ecc-sidebar-visit)
-        (should (equal focused ecc-sidebar-test--two))
-        (should-not tabbed)
-        ;; And under `spaces': its tab, and nothing focused.
-        (setq focused nil)
-        (let ((ecc-use-spaces t))
-          (ecc-sidebar-test--goto "project-one")
-          (ecc-sidebar-visit))
-        (should (equal tabbed ecc-sidebar-test--one))
-        (should-not focused)))))
+        (should (equal tabbed ecc-sidebar-test--two))
+        (should-not selected)))))
 
 (ert-deftest ecc-sidebar-test-a-number-does-what-return-does ()
-  "The number keys take the same path as RET, layout and all.
-Under `classic' pressing 2 used to turn the tab bar on and make a tab,
-where RET on the same row focused the project."
+  "The number keys take the same path as RET on the row of that Space."
   (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
                                     ("two" . ,ecc-sidebar-test--two))
-    (let ((focused nil)
-          (tabbed nil))
-      (cl-letf (((symbol-function 'ecc-focus-project)
-                 (lambda (root &rest _) (setq focused root)))
-                ((symbol-function 'ecc-space--select-tab)
+    (let ((tabbed nil))
+      (cl-letf (((symbol-function 'ecc-space--select-tab)
                  (lambda (space) (setq tabbed (ecc-space-root space))))
                 ((symbol-function 'this-command-keys) (lambda () "1")))
         (ecc-sidebar-jump)
-        (should (equal focused (ecc-space-root (car (ecc-space-list)))))
-        (should-not tabbed)))))
+        (should (equal tabbed (ecc-space-root (car (ecc-space-list)))))))))
 
 (ert-deftest ecc-sidebar-test-n-and-p-skip-what-is-not-a-row ()
   "Moving passes over the headings and the git lines."
@@ -377,6 +361,56 @@ several times a second, moving down onto one with `C-n' was impossible."
         (ecc-sidebar-test--goto "· two")
         (ecc-sidebar-kill-session)
         (should (eq killed (nth 1 sessions)))))))
+
+(ert-deftest ecc-sidebar-test-r-resumes-the-session-at-point ()
+  "`r' resumes the session of its row, and \\`C-u' `r' forks it.
+It is `ecc-resume' underneath, as \\`C-c c r' is."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (let ((resumed nil))
+      (cl-letf (((symbol-function 'ecc-resume)
+                 (lambda (session &optional fork)
+                   (push (list session fork) resumed))))
+        (ecc-sidebar-test--goto "· two")
+        (call-interactively #'ecc-sidebar-resume)
+        (should (equal resumed (list (list (nth 1 sessions) nil))))
+        (setq resumed nil)
+        (let ((current-prefix-arg '(4)))
+          (call-interactively #'ecc-sidebar-resume))
+        (should (eq (caar resumed) (nth 1 sessions)))
+        (should (cadar resumed))
+        ;; A row that is not a session resumes nothing.
+        (setq resumed nil)
+        (goto-char (point-min))
+        (should-error (call-interactively #'ecc-sidebar-resume)
+                      :type 'user-error)
+        (should-not resumed)))))
+
+(ert-deftest ecc-sidebar-test-R-renames-the-session-at-point ()
+  "`R' renames the session of its row, and its buffer follows.
+The prompt offers the name it has, and an empty name is refused."
+  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
+                                    ("two" . ,ecc-sidebar-test--two))
+    (let ((session (nth 1 sessions))
+          (offered nil))
+      (ecc-session-ensure-buffer session)
+      (ecc-sidebar-test--goto "· two")
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (_prompt &optional initial &rest _)
+                   (setq offered initial)
+                   "renamed")))
+        (call-interactively #'ecc-sidebar-rename))
+      (should (equal offered "two"))
+      (should (equal (ecc-session-name session) "renamed"))
+      (should (equal (buffer-name (ecc-session-buffer session)) "*ecc: renamed*"))
+      ;; The row is drawn again under the new name.
+      (should (string-search "renamed" (ecc-sidebar-test--text)))
+      (ecc-sidebar-test--goto "renamed")
+      (should-error (ecc-sidebar-rename "") :type 'user-error)
+      (should-error (ecc-sidebar-rename "   ") :type 'user-error)
+      (should (equal (ecc-session-name session) "renamed"))
+      (goto-char (point-min))
+      (should-error (ecc-sidebar-rename "other") :type 'user-error))))
 
 (ert-deftest ecc-sidebar-test-a-answers-the-session-at-point ()
   "`a' allows what the session of the row is waiting on, not somebody else's."
@@ -567,6 +601,26 @@ things depending on which list was in front."
   (should (eq (lookup-key ecc-sidebar-mode-map (kbd "K")) #'ecc-sidebar-remove-worktree))
   (should (eq (lookup-key ecc-sidebar-mode-map (kbd "X")) #'ecc-sidebar-close-space))
   (should-not (lookup-key ecc-sidebar-mode-map (kbd "x"))))
+
+(ert-deftest ecc-sidebar-test-r-and-R-are-bound ()
+  "`r' resumes and `R' renames, as they do under \\`C-c c'.
+`ecc-global-map-test' holds the global keys to the same commands."
+  (should (eq (lookup-key ecc-sidebar-mode-map (kbd "r")) #'ecc-sidebar-resume))
+  (should (eq (lookup-key ecc-sidebar-mode-map (kbd "R")) #'ecc-sidebar-rename)))
+
+
+(ert-deftest ecc-sidebar-test-dashboard-is-an-obsolete-alias ()
+  "`ecc-dashboard' went in 0.5.0 and a binding of it opens the sidebar.
+The sidebar is the one list of the sessions now, and a user's own key
+for the dashboard should still land somewhere sensible."
+  (should (eq (symbol-function 'ecc-dashboard) 'ecc-sidebar-focus))
+  (should (equal (get 'ecc-dashboard 'byte-obsolete-info)
+                 '(ecc-sidebar-focus nil "0.5.0")))
+  (let (called)
+    (cl-letf (((symbol-function 'ecc-sidebar-focus)
+               (lambda () (interactive) (setq called t))))
+      (command-execute 'ecc-dashboard))
+    (should called)))
 
 (provide 'ecc-sidebar-test)
 

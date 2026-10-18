@@ -50,14 +50,13 @@
 (require 'ecc-core)
 (require 'ecc-protocol)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-proc)
 (require 'ecc-dispatch)
 (require 'ecc-registry)
-(require 'ecc-window)
-
-(declare-function ecc-render-refresh "ecc-render" (session))
-(declare-function ecc-session-ensure-buffer "ecc-session" (session))
-(declare-function ecc-review-ensure-baseline "ecc-review" (session))
+(require 'ecc-render)
+(require 'ecc-chat)
+(require 'ecc-display)
 
 (defvar ecc-history-page-turns 50
   "Number of turns read when a recorded conversation is opened.")
@@ -354,12 +353,23 @@ the top of the buffer can read the page before it."
     (prog1 (ecc-history--replay session (nthcdr from lines) abandoned)
       (ecc-history--redraw session))))
 
+(defun ecc-history--command-session ()
+  "Return the session the command being run was called on.
+That is the session of the current buffer, or of the window clicked: a
+click on the button of a window that is not selected runs the command
+with the buffer of the selected one current."
+  (let* ((event last-command-event)
+         (window (and (mouse-event-p event)
+                      (posn-window (event-start event)))))
+    (with-current-buffer (if (windowp window) (window-buffer window) (current-buffer))
+      (or ecc-render--session
+          (user-error "This buffer is not a session")))))
+
 (defun ecc-history-load-more (session &optional n-turns)
   "Read the N-TURNS turns before the ones SESSION already shows.
 The turns are put in front of the ones already there, and the buffer
 is drawn again from the top.  Returns the number read."
-  (interactive (list (or (bound-and-true-p ecc-render--session)
-                         (user-error "This buffer is not a session"))))
+  (interactive (list (ecc-history--command-session)))
   (let* ((offset (ecc-session-history-offset session))
          (file (ecc-history-file (ecc-session-id session))))
     (cond
@@ -393,7 +403,6 @@ is drawn again from the top.  Returns the number read."
 A page read at the front moves every turn, so the whole buffer is
 drawn rather than the live region alone."
   (when (buffer-live-p (ecc-session-buffer session))
-    (require 'ecc-render)
     (ecc-render-refresh session)))
 
 (defun ecc-history-more-p (session)
@@ -629,7 +638,6 @@ Interactively the recordings are offered by name."
            (cdr (assoc (completing-read "Session: " (mapcar #'car names) nil t)
                        names)))))
   (let ((session (ecc-history-session session-id)))
-    (require 'ecc-session)
     (ecc-session-ensure-buffer session)
     (when (null (ecc-session-turns session))
       (ecc-history-load session))
@@ -669,13 +677,11 @@ the CLI would run twice on the same recording."
              (ecc-history-file (ecc-session-id session)))
     (ecc-history-load session))
   (setf (ecc-session-kind session) 'own)
-  (require 'ecc-session)
   (ecc-session-ensure-buffer session)
   ;; A session resumed in the Emacs that started it keeps the baseline it
   ;; began with -- this restarts the CLI, not the work -- and one read
   ;; back from a recording takes its first here.
-  (require 'ecc-review)
-  (ecc-review-ensure-baseline session)
+  (ecc-git-ensure-baseline session)
   (ecc-proc-start session #'ecc-dispatch t fork)
   ;; Noted after the start, which would otherwise be the one to forget it.
   (setf (alist-get 'fork-unsettled (ecc-session-progress session)) (and fork t))
@@ -784,7 +790,6 @@ again."
     (ecc-model-set-session-id session id)
     (when file
       (puthash id file ecc-history--files))
-    (require 'ecc-render)
     (ecc-render-refresh session)
     (ecc-history-resume session)
     (message "%s is now %s; %s was left where it was"
@@ -816,6 +821,16 @@ sent as a prompt.  This is on `ecc-prompt-intercept-functions\='."
                    (ecc-history-read-recording session))))
       (ecc-history-take-over session info))
     t))
+
+(defvar ecc-history-load-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ecc-history-load-more)
+    (define-key map [mouse-2] #'ecc-history-load-more)
+    map)
+  "The keys of the button that reads an older page of the recording.
+A parent of `ecc-history-button-map', above the button's own keys.")
+
+(ecc-chat-add-keymap-parent ecc-history-button-map ecc-history-load-map)
 
 (add-hook 'ecc-prompt-intercept-functions #'ecc-history-resume-intercept)
 (add-to-list 'ecc-prompt-immediate-commands ecc-history-resume-command)

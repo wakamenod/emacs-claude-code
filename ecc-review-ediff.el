@@ -140,8 +140,9 @@
 (require 'ediff)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-diff)
-(require 'ecc-window)
+(require 'ecc-display)
 (require 'ecc-review)
 (require 'ecc-review-files)
 (require 'ecc-review-talk)
@@ -169,17 +170,17 @@ cannot resolve it."
          (side (lambda (spec)
                  (or (ecc-review-ediff--tree root spec) (funcall fail))))
          (now (lambda ()
-                (or (ecc-review-snapshot root)
+                (or (ecc-git-snapshot root)
                     (user-error "Cannot read the working tree of %s"
                                 (abbreviate-file-name root))))))
     (cond
      ;; What is staged: HEAD against the index.
      ((eq range 'staged)
       (cons (or (ecc-review--head-tree root) (funcall fail))
-            (or (ecc-review-snapshot root t) (funcall fail))))
+            (or (ecc-git-snapshot root t) (funcall fail))))
      ;; What is not staged yet: the index against the working tree.
      ((or (null range) (string-empty-p range))
-      (cons (or (ecc-review-snapshot root t) (funcall fail)) (funcall now)))
+      (cons (or (ecc-git-snapshot root t) (funcall fail)) (funcall now)))
      ;; One commit, X^!: its first parent against it, which is what
      ;; `git diff X^!' shows of a commit that is not a merge.
      ((string-match "\\`\\(.+\\)\\^!\\'" range)
@@ -214,7 +215,7 @@ AFTER the ids of the blobs the trees hold for PATH, nil for a tree that
 does not name it -- one side of a file created or deleted -- and the
 modes as git writes them, \"160000\" being a submodule, whose id is a
 commit and no blob.  ROOT is the repository, PATHS restrict it."
-  (pcase (apply #'ecc-review--git root
+  (pcase (apply #'ecc-git-run root
                 (append (list "diff" "--raw" "-z" "--no-renames" "--no-abbrev"
                               left right "--")
                         paths))
@@ -248,7 +249,7 @@ a git that fails here altogether, which is logged."
   (let* ((wanted (seq-uniq (seq-remove (lambda (blob) (gethash (cons 'raw blob) cache))
                                        (delq nil (copy-sequence blobs)))))
          (coding (or (car (find-operation-coding-system
-                           'call-process ecc-review-git-executable))
+                           'call-process ecc-git-executable))
                      (car default-process-coding-system)
                      'undecided)))
     (ecc-review--cat-file
@@ -279,7 +280,7 @@ created or deleted."
   (when blob
     (let ((key (cons 'raw blob)))
       (or (and cache (gethash key cache))
-          (pcase (ecc-review--git root "cat-file" "blob" blob)
+          (pcase (ecc-git-run root "cat-file" "blob" blob)
             (`(0 . ,output)
              (when cache (puthash key output cache))
              output)
@@ -379,10 +380,10 @@ order the files were written out, and STATUS is that of
 `ecc-review-ediff-pairs\='.  Buffer-local in the ediff control buffer.")
 
 (defvar-local ecc-review-ediff--cache nil
-  "What this review read and coloured, by blob; see `ecc-review-ediff--blob-text\='.
+  "What this review read and coloured, by blob.
 Under (raw . BLOB) the text of a blob, and under (face BLOB PATH FONTIFY)
-that text fontified as PATH.  Kept in the control buffer, pruned to the
-blobs of the review on every reading.")
+that text fontified as PATH; see `ecc-review-ediff--blob-text\='.  Kept in
+the control buffer, pruned to the blobs of the review on every reading.")
 
 (defvar-local ecc-review-ediff--buffers nil
   "The (BASE . NOW) buffers this control buffer compares.")
@@ -547,13 +548,6 @@ The control panel is out of sight, but for the help \\`?' shows
   :type '(choice (const :tag "One above the other, Claude on the right" stacked)
                  (const :tag "Side by side, Claude at the bottom" side-by-side))
   :group 'ecc)
-
-(defun ecc-review-ediff-stacked-p (&optional control)
-  "Return non-nil when the review in CONTROL has one side above the other.
-CONTROL is the current buffer by default.  The split \\`|' toggles is
-what says so, not the setting the review opened with."
-  (eq (buffer-local-value 'ediff-split-window-function (or control (current-buffer)))
-      #'split-window-vertically))
 
 (defvar ecc-review-ediff-file-spacing 1
   "Blank lines put in front of each file but the first of an ediff review.
@@ -1609,6 +1603,7 @@ out of the left, `old', and puts into the right, `new', each with
     (nreverse lines)))
 
 (cl-defmethod ecc-review-units (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the differences of this ediff review as hunks, in order.
 Counted from ediff's own vector of them rather than from
 `ediff-number-of-differences\=', which ediff sets only after the
@@ -1620,14 +1615,17 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
                       (number-sequence 0 (1- (length ediff-difference-vector-A))))))))
 
 (cl-defmethod ecc-review-lines (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the lines of every difference of this ediff review."
   (mapcan #'ecc-review-ediff--unit-lines (ecc-review-units)))
 
 (cl-defmethod ecc-review--unit-lines (unit &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the lines of the difference UNIT of this ediff review."
   (ecc-review-ediff--unit-lines unit))
 
 (cl-defmethod ecc-review--units-by-path (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return a hash of each file of this ediff review to its differences, in order."
   (let ((table (make-hash-table :test #'equal)))
     (dolist (unit (ecc-review-units))
@@ -1636,14 +1634,17 @@ differences are in (`ecc-review-ediff--differences-computed\=')."
     table))
 
 (cl-defmethod ecc-review--unit-at (item &context (major-mode ediff-mode) &optional _path)
+  ;; checkdoc-params: (major-mode)
   "Return ITEM, a difference of this ediff review already."
   item)
 
 (cl-defmethod ecc-review--text (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the differences ediff computed last, which every reading makes anew."
   ediff-difference-vector-A)
 
 (cl-defmethod ecc-review--base-of (hunk &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the blob of the old side of the file of the difference HUNK.
 As (blob REPOSITORY ID), REPOSITORY this review's; `empty' for none."
   (pcase (alist-get (plist-get hunk :path) ecc-review-ediff--bases nil nil #'equal)
@@ -1655,6 +1656,7 @@ As (blob REPOSITORY ID), REPOSITORY this review's; `empty' for none."
   (if (zerop count) "none" (format "L%d-L%d" start end)))
 
 (cl-defmethod ecc-review-unit-description (hunk &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return how `review_hunks' describes the difference HUNK.
 By ediff's own number, the one its mode line counts and j jumps to, and
 the lines it covers on each side."
@@ -1666,6 +1668,7 @@ the lines it covers on each side."
                                       (plist-get hunk :start) (plist-get hunk :end))))
 
 (cl-defmethod ecc-review-place-at-point (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return where the user is in this ediff review, as a plist, or nil.
 The point of the side the keyboard is in, the left being `old' and the
 right `new'; the right when it is in neither, as in the control panel.
@@ -1714,6 +1717,7 @@ no file."
                  line)))))
 
 (cl-defmethod ecc-review-region (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the lines selected in the window of a side of this ediff review.
 As the diff review's (`ecc-review-region'), from the region of the side
 the keyboard is in; in the control panel there is none.  :side is
@@ -1770,6 +1774,7 @@ share; :hunk is that difference, or nil."
         (point)))))
 
 (cl-defmethod ecc-review--note-place (note line _lines &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return where NOTE, put on LINE, is drawn in an ediff review.
 A comment on a line goes under the line, on the side the line is on:
 the left for one the change took out, the right for one it put in.  A
@@ -1818,6 +1823,7 @@ with \\`}' and sent in, not one shared by all those on the left."
       (_ (list (plist-get line :position) 2 (plist-get line :line))))))
 
 (cl-defmethod ecc-review--decorate (_commented _lines &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Mark nothing: an ediff review has no @@ line to mark."
   nil)
 
@@ -1847,6 +1853,7 @@ control buffer."
       (ecc-review-direct--refresh-paths (current-buffer)))))
 
 (cl-defmethod ecc-review-move-to (place _window &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Move the ediff review to PLACE, a comment or a line, selecting no window.
 ediff is put on the difference PLACE is in, the way j would put it there
 but without laying the windows out again or handing the control panel
@@ -1880,6 +1887,7 @@ file."
                 (ecc-review-ediff--right-point)))))
 
 (cl-defmethod ecc-review--note-removed (_note &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Forget where the view was last moved: it may have been to that comment."
   (setq ecc-review-ediff--at nil))
 
@@ -1892,6 +1900,7 @@ file."
          (with-current-buffer ediff-buffer-B (point)))))
 
 (cl-defmethod ecc-review-reading-position (_window &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return where the ediff review is being read, as a KEY of the review.
 The comment or line it was last moved to, while the right side has not
 moved since; otherwise just before the point of the right side, so that
@@ -1907,6 +1916,7 @@ any difference, the top."
           (t 0))))
 
 (cl-defmethod ecc-review-shown-window (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the window on the right of this ediff review, when it is on the screen."
   (and (window-live-p ediff-window-B)
        (eq (window-buffer ediff-window-B) ediff-buffer-B)
@@ -1914,11 +1924,13 @@ any difference, the top."
        ediff-window-B))
 
 (cl-defmethod ecc-review-show-quietly (_session _others &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the window of this ediff review, showing nothing that is not shown.
 An ediff review lays out a frame of its own, and only the user opens one."
   (ecc-review-shown-window))
 
 (cl-defmethod ecc-review-takes-the-screen-p (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return t: an ediff review takes the frame and the keyboard when it opens."
   t)
 
@@ -2146,6 +2158,7 @@ or hides Claude\\='s comments."
 (defvar ecc-review-ediff-full-frame)     ; below, with the frame it opens in
 
 (cl-defmethod ecc-review-files-entries (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the files of this ediff review, one per section of the two sides.
 The lines added and removed are those of its differences, which are
 what the review shows; there are no renames, the review being made with
@@ -2165,10 +2178,12 @@ what the review shows; there are no renames, the review being made with
             ecc-review-ediff--sections)))
 
 (cl-defmethod ecc-review-files--key (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the sections and the differences of this review: what its files are."
   (list ecc-review-ediff--sections (ecc-review-units)))
 
 (cl-defmethod ecc-review-files-current (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the file of the difference ediff is on, else of the right side's point."
   (if (ediff-valid-difference-p ediff-current-difference)
       (plist-get (nth ediff-current-difference (ecc-review-units)) :path)
@@ -2176,6 +2191,7 @@ what the review shows; there are no renames, the review being made with
       (car (ecc-review-ediff--file-place 'B point)))))
 
 (cl-defmethod ecc-review-files-goto (entry select &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Put this review on the first difference of the file ENTRY.
 A file with no difference -- one named and not shown -- is scrolled to
 on both sides.  SELECT hands the right window the keyboard."
@@ -2202,6 +2218,7 @@ on both sides.  SELECT hands the right window the keyboard."
                     (point-max))))))
 
 (cl-defmethod ecc-review-files-hide (entries &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Hide both halves of the files ENTRIES of this ediff review, and no other.
 The overlays live in the two sides and are kept here, in the control
 buffer."
@@ -2223,12 +2240,14 @@ buffer."
                 (push overlay ecc-review-files--hiders)))))))))
 
 (cl-defmethod ecc-review-files-review-window (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Return the left window of this ediff review, which the pane goes beside."
   (and (window-live-p ediff-window-A)
        (eq (window-buffer ediff-window-A) ediff-buffer-A)
        ediff-window-A))
 
 (cl-defmethod ecc-review-files-place-pane (pane &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Show PANE left of this ediff review, and return its window.
 With the frame the review's own (`ecc-review-ediff-full-frame\\=') the
 pane is a side window on the left, which ediff laying its windows out
@@ -2404,6 +2423,7 @@ When the filter hides it, to the nearest one it keeps
 
 (cl-defmethod ecc-review-files-filter-applied (&context (major-mode ediff-mode)
                                                         &optional quietly)
+  ;; checkdoc-params: (major-mode)
   "Move this review off a difference the filter now hides, and say what it hides.
 What it hides is on the mode line of the right window
 \(`ecc-review-direct-refresh-headers').  QUIETLY -- a drawing no key of
@@ -2424,6 +2444,7 @@ which would lay the windows out again, and says it when what is hidden
     (ediff-recenter 'no-rehighlight))))
 
 (cl-defmethod ecc-review-go-back (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Lay this ediff review out again and give its right window the keyboard.
 Its buffer is the control buffer, which `pop-to-buffer' would put on the
 screen with the keyboard in it, where the review keeps it out of sight
@@ -2435,6 +2456,7 @@ whatever was in the way may have taken a window of it."
   (ecc-review-direct-give-keyboard (current-buffer) 'B))
 
 (cl-defmethod ecc-review-files-give-keyboard (&context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Give the right window of this ediff review the keyboard, where it is read."
   (ecc-review-direct-give-keyboard (current-buffer) 'B))
 
@@ -3064,6 +3086,7 @@ In a frame of its own, the review staying as it is
     (ecc-review-direct-open-file (car target) (cdr target))))
 
 (cl-defmethod ecc-review-files-open-file (entry &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
   "Open the file ENTRY of this ediff review at its first change, as RET would.
 In the frame the files of a review open in; a file with no difference
 shown keeps the point its buffer had."
@@ -3220,7 +3243,7 @@ of the right window (`ecc-review-direct--refresh-paths').  Run as the
 layout or the difference changes, from the hooks of the control
 buffer; nothing that would come out the same is set again."
   (with-current-buffer control
-    (let* ((stacked (ecc-review-ediff-stacked-p control))
+    (let* ((stacked (ecc-review-talk-stacked-p control))
            (fitted '(:eval (ecc-review-direct--header-line)))
            (keys (ecc-review-direct--key-pieces (unless stacked 'B))))
       (if stacked
@@ -3853,6 +3876,32 @@ session left to drive."
              (display-graphic-p frame))
     (select-frame-set-input-focus frame)))
 
+(defun ecc-review-ediff--open-in-walk (walk session range)
+  "Open the ediff review of RANGE, of the pull request WALK, for SESSION."
+  (ecc-review-pr-opening walk
+    (ecc-review-ediff-range-buffer session range (ecc-review-pr-walk-root walk))))
+
+(cl-defmethod ecc-review-pr--replace (walk session range from
+                                           &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
+  "Quit the ediff review FROM of WALK and open RANGE for SESSION in its place.
+An ediff review takes the frame, so the one left is quit, its comments
+held by WALK, and the next opened in its place; if that cannot be
+opened, the one quit comes back."
+  (let ((left ecc-review--range))
+    (ecc-review-pr--hold walk)
+    (ecc-review-ediff-quit from)
+    (condition-case err
+        (ecc-review-ediff--open-in-walk walk session range)
+      (error
+       (ecc-review-ediff--open-in-walk walk session left)
+       (signal (car err) (cdr err))))))
+
+(cl-defmethod ecc-review-pr--refresh-header (buffer &context (major-mode ediff-mode))
+  ;; checkdoc-params: (major-mode)
+  "Draw the headers and mode lines of the ediff review BUFFER again."
+  (ecc-review-direct-refresh-headers buffer))
+
 (defun ecc-review-ediff-quit (control)
   "Quit the ediff review in CONTROL, which closes it and its buffers.
 This is what `ecc-review--close-function\\=' is set to: a review that
@@ -4150,7 +4199,7 @@ the paths it keeps are relative to that."
                             (ecc-review--head-tree root)
                             (user-error "Cannot read the history of %s"
                                         (abbreviate-file-name root)))
-                        (or (ecc-review-snapshot root)
+                        (or (ecc-git-snapshot root)
                             (user-error "Cannot read the working tree of %s"
                                         (abbreviate-file-name root)))))))
     (append (list :left (car trees) :right (cdr trees)
@@ -4190,6 +4239,18 @@ opened."
                   ecc-review--elsewhere (plist-get content :elsewhere))
             (ecc-review-direct-refresh-headers control)))
         control))))
+
+(cl-defmethod ecc-review--open ((_style (eql ediff)) session paths)
+  "Open the review of what SESSION changed, PATHS alone if given, in ediff.
+Outside git there are no two trees to lay side by side: the review is
+built from what the session recorded, and what that gives is a diff."
+  (if (ecc-git-root (or (ecc-session-project-root session) default-directory))
+      (ecc-review-ediff-buffer session paths)
+    (cl-call-next-method)))
+
+(cl-defmethod ecc-review--open-range ((_style (eql ediff)) session range root paths)
+  "Open the review of ROOT against RANGE for SESSION, PATHS alone, in ediff."
+  (ecc-review-ediff-range-buffer session range root paths))
 
 (defun ecc-review-ediff-buffer (session &optional paths)
   "Open everything SESSION changed as one ediff and return the control buffer.
@@ -4433,7 +4494,10 @@ so are the difference being read and the place of each side."
         (setq ecc-review--fingerprint nil)))))
 
 (cl-defmethod ecc-review-reread (&context (major-mode ediff-mode) &optional watching)
-  "Read this ediff review again (`ecc-review-ediff--reread\\=')."
+  ;; checkdoc-params: (major-mode)
+  "Read this ediff review again (`ecc-review-ediff--reread\\=').
+WATCHING changes nothing here: an ediff review is never closed by
+being read."
   (ecc-review-ediff--reread watching))
 
 (provide 'ecc-review-ediff)

@@ -79,8 +79,8 @@
   (demo-write "src/app.py" demo-app-new)
   (find-file (expand-file-name "src/app.py" demo-root))
   (delete-other-windows)
-  (demo-say (format "ecc %s   theme %S   ecc-use-spaces %S   reply pane %S lines"
-                    (ecc-version) custom-enabled-themes ecc-use-spaces
+  (demo-say (format "ecc %s   theme %S   reply pane %S lines"
+                    (ecc-version) custom-enabled-themes
                     ecc-review-talk-reply-height))
   nil)
 

@@ -57,9 +57,8 @@
 (require 'ecc-dispatch)
 (require 'ecc-render)
 (require 'ecc-sync)
-(require 'ecc-window)
-
-(declare-function ecc-plan-approve-request "ecc-plan" (request &optional mode))
+(require 'ecc-chat)
+(require 'ecc-display)
 
 (defvar ecc-perm-default-deny-message "User denied this tool call."
   "Message sent to Claude when the user denies without giving a reason.")
@@ -76,6 +75,14 @@ shortcut.  Nil remembers every tool.")
 
 (defvar ecc-perm-settings-file ".claude/settings.local.json"
   "Settings file, relative to the project root, that allow patterns go to.")
+
+;; It keeps its `ecc-plan-' name: users set the plan's setting by it.
+(defcustom ecc-plan-default-mode "acceptEdits"
+  "Permission mode switched to when a plan is approved without choosing one.
+Nil approves without asking for a mode change, which the CLI answers
+by leaving plan mode for the default mode."
+  :type '(choice (const :tag "Leave it to the CLI" nil) string)
+  :group 'ecc)
 
 ;;;; Responding (the one place that answers)
 
@@ -188,6 +195,23 @@ Returns `save', `allow', `deny', or nil when there is nothing to ask."
       (?a 'allow)
       (?d 'deny))))
 
+(defun ecc-perm--plan-updated-permissions (mode)
+  "Return the updatedPermissions vector switching to MODE, or nil."
+  (when (and mode (not (string-empty-p mode)))
+    (vector (ecc-protocol-set-mode-suggestion mode))))
+
+(define-obsolete-function-alias 'ecc-plan-approve-request
+  #'ecc-perm-approve-plan-request "0.5.0")
+
+(defun ecc-perm-approve-plan-request (request &optional mode)
+  "Allow the plan REQUEST as it stands, switching to permission MODE.
+MODE defaults to `ecc-plan-default-mode'.  Used when the plan is
+approved without opening the review buffer."
+  (let ((mode (or mode ecc-plan-default-mode)))
+    (ecc-perm-respond request 'allow
+                      :updated-permissions (ecc-perm--plan-updated-permissions mode)
+                      :message (if mode (format "approved → %s" mode) "approved"))))
+
 (defun ecc-perm-allow-request (request)
   "Allow REQUEST the way its kind wants, and return what happened.
 A permission is allowed after the unsaved buffer check; a question
@@ -199,8 +223,7 @@ Returns `allow', `deny', `save' or `opened'."
                                         (ecc-request-session request))
      'opened)
     ('plan
-     (require 'ecc-plan)
-     (ecc-plan-approve-request request)
+     (ecc-perm-approve-plan-request request)
      'allow)
     (_
      (let ((choice (ecc-perm--unsaved-choice request)))
@@ -768,6 +791,38 @@ else that collects the answers its own way sends too."
       (ecc-perm-close-buffer buffer))))
 
 (add-hook 'ecc-request-resolved-hook #'ecc-question--on-request-resolved)
+
+;;;; Keys
+
+(defvar ecc-perm-chat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-a") #'ecc-perm-allow)
+    (define-key map (kbd "C-c C-d") #'ecc-perm-deny)
+    map)
+  "The keys of the permissions in a chat buffer, wherever point is.
+A parent of `ecc-chat-mode-map', so that a key bound there wins.")
+
+(defvar ecc-perm-transcript-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "a") #'ecc-perm-allow)
+    map)
+  "The keys of the permissions in the transcript.
+A parent of `ecc-chat-transcript-map', so that a key bound there wins.")
+
+(defvar ecc-perm-request-section-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "a") #'ecc-perm-allow)
+    (define-key map (kbd "d") #'ecc-perm-deny)
+    (define-key map (kbd "A") #'ecc-perm-allow-always)
+    (define-key map (kbd "u") #'ecc-perm-approve-turn)
+    (define-key map (kbd "r") #'ecc-perm-add-pattern)
+    map)
+  "The keys of the permissions on a node that is waiting for an answer.
+A parent of `ecc-request-section-map', above the transcript's keys.")
+
+(ecc-chat-add-keymap-parent ecc-chat-mode-map ecc-perm-chat-map)
+(ecc-chat-add-keymap-parent ecc-chat-transcript-map ecc-perm-transcript-map)
+(ecc-chat-add-keymap-parent ecc-request-section-map ecc-perm-request-section-map)
 
 (provide 'ecc-perm)
 

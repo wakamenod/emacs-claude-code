@@ -11,6 +11,302 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [0.5.0] - 2026-10-18
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Added
+
+- The sidebar's `r` resumes the session of the row at point and `R`
+  renames it, as `C-c c r` and `C-c c R` do: a stopped session is started
+  again with `--resume` and its window selected, a running one is gone to,
+  and `C-u r` forks it into a new conversation. `R` offers the name the
+  session has and refuses an empty one. A row that is not a session
+  refuses both.
+- `ecc-delete-recording`, also `d` in `ecc-resume-menu` (`C-c c ? r d`),
+  deletes a recorded conversation from `~/.claude/projects`. It offers
+  what `ecc-resume` offers -- the sessions of this Emacs and the
+  recordings of the project, or of every project when this one has none
+  -- but always asks which, where `ecc-resume` takes the current buffer's
+  stopped session without asking, and then asks again, naming the
+  session and the file. A session running in this Emacs is refused, and
+  so is one the registry says another process is running -- a terminal
+  `claude` or another Emacs -- naming its PID, since that CLI is still
+  writing to the file; unlike a resume there is no going on anyway. A
+  stopped session of this Emacs keeps its buffer, with nothing left to
+  resume from. The picker both commands use is
+  `ecc--read-session-id`, out of `ecc-read-session`.
+
+### Changed
+
+- The `declare-function` forms pass `check-declare` on Emacs 29.1 and in an
+  Emacs installed without its C sources, which is what MELPA's checks run
+  in: melpazoid builds Emacs and then deletes the source. The six
+  tree-sitter primitives that 0.4.4 declared in `treesit.c` are declared in
+  `treesit.el` with FILEONLY, since the C file is not there to look in.
+  `flymake-diagnostic-text` is declared with FILEONLY too, as 29.1's
+  flymake defines it through a macro `check-declare` does not read, and
+  `treesit-buffer-root-node` with no argument list, as the TAG argument
+  0.4.4 gave it is newer than 29.1. Nothing changes when the package runs.
+- `ecc-global-map` is defined in `ecc.el` rather than `ecc-answer.el`, and
+  its keymap autoload names `ecc`, so the first key pressed under its
+  prefix -- `C-c c` in the documentation -- loads the whole package, about
+  0.2 s, instead of `ecc-answer` alone. Most of its keys loaded the whole
+  package on their own already. Every key means what it meant, and
+  `:bind-keymap` and `(global-set-key (kbd "C-c c") 'ecc-global-map)` bind
+  it as before. Its keys name commands of nearly every module, and
+  `ecc.el` is the one file that requires them all, so `ecc-answer.el` no
+  longer declares sixteen commands of the modules above it. An init that
+  adds a key to the map, as the 0.4.0 entry for `G` showed, now waits for
+  `ecc` rather than `ecc-answer`, which loads before the map is defined:
+
+  ```elisp
+  (with-eval-after-load 'ecc
+    (define-key ecc-global-map "G" #'ecc-review-range))
+  ```
+- What ecc asks git about a directory is in a new module, `ecc-git.el`,
+  which requires `ecc-core` and `ecc-model` and nothing else. The
+  questions about worktrees and branches come out of `ecc-worktree.el`, and
+  the snapshot a session's review is taken against out of `ecc-review.el`,
+  renamed to their new home: `ecc-worktree-list`, `-main`, `-branch`,
+  `-branches`, `-ahead-behind`, `-of-branch`, `-toplevel`, `-session-name`,
+  `-parse` and `-forget` are `ecc-git-worktrees`, `ecc-git-main-worktree`,
+  `ecc-git-branch`, `ecc-git-branches`, `ecc-git-ahead-behind`,
+  `ecc-git-worktree-of-branch`, `ecc-git-toplevel`, `ecc-git-session-name`,
+  `ecc-git-parse-worktrees` and `ecc-git-forget`, and the struct
+  `ecc-worktree-entry` is `ecc-git-worktree-entry`; `ecc-review-git-root`,
+  `ecc-review-snapshot` and `ecc-review-ensure-baseline` are `ecc-git-root`,
+  `ecc-git-snapshot` and `ecc-git-ensure-baseline`. The two git runners
+  share one body, `ecc-git-run` for what the review parses and
+  `ecc-git-run-with-stderr` for what the worktree commands show, and
+  `ecc-worktree-git-executable` and `ecc-review-git-executable` are one
+  variable, `ecc-git-executable`. Starting a session names it and takes
+  its baseline from `ecc-git` alone, so with the Spaces off `ecc-start`
+  no longer reaches into `ecc-worktree.el` to name a session, and neither
+  it nor opening a recording declares a function of `ecc-review.el`. The
+  same git commands run, with the same ten-second cache. A git that cannot
+  be started at all is logged in `*ecc-log: git*`, where it used to be
+  `*ecc-log: review*` or `*ecc-log: worktree*`.
+- The review's keys on a request waiting for an answer, `c` to comment on
+  the proposal and `e` to edit it, are bound in a keymap of
+  `ecc-review.el`, `ecc-review-request-section-map`, which the review
+  hangs under `ecc-request-section-map` as the other modules above the
+  chat hang theirs, rather than in that map itself. `ecc-chat.el` no
+  longer requires `ecc-review`, and with it `ecc-lifecycle` and
+  `ecc-history`: loading the chat mode loads 17 modules where it loaded
+  25. The keys are unchanged, since every session buffer is made with the
+  whole package loaded, and a `c` or `e` a user binds in
+  `ecc-request-section-map` still wins over the review's.
+- The answers to a permission request -- `C-c C-a` and `C-c C-d` from the
+  prompt, `a` in the transcript, and `a`, `d`, `A`, `u` and `r` on the
+  request -- are bound in keymaps of `ecc-perm.el`, `ecc-perm-chat-map`,
+  `ecc-perm-transcript-map` and `ecc-perm-request-section-map`, which
+  `ecc-perm` hangs under `ecc-chat-mode-map`, `ecc-chat-transcript-map`
+  and `ecc-request-section-map`, rather than in those maps themselves.
+  `ecc-chat.el` no longer requires `ecc-perm`, and with it `ecc-dispatch`
+  and `ecc-sync`: loading the chat mode loads 15 modules where it loaded
+  18. The keys are unchanged, and one of them a user binds in a chat map
+  still wins over `ecc-perm`'s.
+- The Capabilities buffer -- `ecc-capabilities-show`, `ecc-capabilities-mode`
+  and the rest of `ecc-capabilities-*` -- is in a file of its own,
+  `ecc-capabilities.el`, rather than in `ecc-dashboard.el`. Every name,
+  key and line it draws is as before. `C` in the dashboard is
+  `ecc-dashboard-capabilities`, which shows the session of the row at
+  point, so that the Capabilities buffer no longer asks the dashboard
+  which session it is about.
+- A session buffer is made in `ecc-chat.el`: `ecc-session-ensure-buffer`,
+  `ecc-session-directory`, `ecc-session-buffer-name` and the function that
+  forgets a session whose buffer is killed come out of `ecc-session.el`,
+  and `ecc--require-package` out of `ecc-lifecycle.el`, under the same
+  names. `ecc-lifecycle`, `ecc-history`, `ecc-restore` and `ecc-space`
+  require `ecc-chat`, which sits below all of them, and no longer declare
+  the function or load `ecc-session` at run time to call it; opening a
+  recording loads `ecc-chat` and `ecc-render` with `ecc-history` instead
+  of on the way to the first buffer. `ecc-chat-mode` still loads nothing,
+  and the package is loaded at the same moments as before: making a
+  session buffer loads all of it first, as every way into a session does,
+  and `ecc-chat.el` is now the one file that loads `ecc` at run time.
+  Resuming a session no longer loads `ecc-review` on its own before it
+  takes the baseline, which has come from `ecc-git` since that module
+  was added.
+- Approving a plan request is a permission answer, so it moves from
+  `ecc-plan.el` to `ecc-perm.el` with the option it reads.
+  `ecc-plan-default-mode` keeps its name and means what it meant.
+  `ecc-plan-approve-request` is `ecc-perm-approve-plan-request`, and the
+  old name stays as an obsolete alias. The files of a session's project,
+  which the `@` completion offers and `RET` on a path searches, come from
+  `ecc-visit.el`: `ecc-prompt-project-files` is `ecc-visit-project-files`.
+  Neither `ecc-perm.el` nor `ecc-visit.el` declares a function of a module
+  that requires it, or loads one when it is asked. A plan is approved, and
+  a path is found, as before.
+- The "Load older messages" button above the first turn has no action of
+  its own. `ecc-render.el` draws it with a new keymap,
+  `ecc-history-button-map`, which `ecc-chat.el` defines with the
+  transcript's button keys as its parent, and `ecc-history.el` binds
+  `RET` and `mouse-2` to `ecc-history-load-more` in a keymap of its own,
+  `ecc-history-load-map`, that it makes a parent of it. The renderer
+  no longer declares `ecc-history-load-more` or loads `ecc-history` at
+  run time to call it. The button reads, looks and answers as before,
+  mouse-1 included. A user's own binding in `ecc-history-button-map`
+  wins, as in the other keymaps of `ecc-chat.el`. A click reads the
+  session of the window it was made in, which need not be the selected
+  window.
+- The review modules below `ecc-review-ediff.el` and `ecc-review-pr.el`
+  reach them through generic functions those two specialise, as the
+  layout of `ecc-window.el` reaches `ecc-space.el`, rather than by name.
+  `ecc-review` and `ecc-review-range` open `ecc-review-style` through
+  `ecc-review--open` and `ecc-review--open-range`, whose default is the
+  diff review and whose `ediff` methods are in `ecc-review-ediff.el`;
+  outside git the review of a session is still a diff. Both commands load the
+  whole package before they dispatch, since autoloaded from a cold Emacs
+  they have loaded `ecc-review.el` alone and the `ediff` style would have
+  opened a diff. The header line of a review asks its walk what to say
+  through `ecc-review-walk-status`, which `ecc-review-pr.el` answers for a
+  pull request. Going to the next commit of a pull request and redrawing
+  the count of its comments are `ecc-review-pr--replace` and
+  `ecc-review-pr--refresh-header`, whose ediff methods are in
+  `ecc-review-ediff.el`. `ecc-review-ediff-stacked-p`, which reads Emacs's
+  `ediff-split-window-function` alone, moves to `ecc-review-talk.el` as
+  `ecc-review-talk-stacked-p`, and the old name stays as an obsolete
+  alias. `ecc-review.el`, `ecc-review-pr.el` and `ecc-review-talk.el` no
+  longer declare a function of a module that requires them. Diff and
+  ediff reviews, the walk through a pull request's commits and the reply
+  pane behave as before.
+- Three declarations became top-level requires, where the module named
+  already lay below the one declaring it: `ecc-answer.el` requires
+  `ecc-plan`, `ecc-lifecycle.el` requires `ecc-answer`, and
+  `ecc-worktree.el` requires `ecc-review-pr`. Nothing changes for the
+  user.
+- Twenty top-level requires of a module the file uses nothing of are gone,
+  most of them of `ecc-window` left behind when the display moved to
+  `ecc-display.el`; the modules require 310 of each other where they
+  required 330. Nothing changes for the user.
+- Showing a session is in a new module, `ecc-display.el`, which sits above
+  `ecc-chat.el` and below every module that shows one. `ecc-display-session`,
+  `ecc-window-select-session`, `ecc-window-display-beside-session`,
+  `ecc-window-display-review`, `ecc-window-show-review-quietly`,
+  `ecc-window-hide-for-review`, `ecc-switch-session` and
+  `ecc-focus-project` come out of `ecc-window.el` under the same names,
+  with `ecc-window-hide-on-review`, `ecc-window-review-focus` and
+  `ecc-window-quiet-split-min-height`. `ecc-window.el` keeps the projects,
+  the source buffers, the regions and which session a command means, and
+  no longer declares a function of `ecc-chat.el` or loads it at run time.
+  `C-c C-t` in a session buffer is bound in a keymap of `ecc-display.el`,
+  `ecc-display-chat-map`, which it hangs under `ecc-chat-mode-map`, so a
+  `C-c C-t` of your own there still wins. Every key and every window is as
+  before.
+- `C-c C-b` in a session buffer is bound in a keymap of `ecc-btw.el`,
+  `ecc-btw-chat-map`, which it hangs under `ecc-chat-mode-map`, and
+  `ecc-chat.el` no longer requires `ecc-btw`. A `C-c C-b` of your own in
+  `ecc-chat-mode-map` still wins.
+- The keys of a diff review that belong to the modules above
+  `ecc-review.el` -- `s` and `/` for the files pane, `T`, `t` and `M` for
+  talking to the session, and `]`, `[` and `C-c C-a` for a pull request
+  read a commit at a time -- are bound in keymaps of those modules,
+  `ecc-review-files-review-map`, `ecc-review-talk-review-map` and
+  `ecc-review-pr-review-map`, which each hangs under `ecc-review-mode-map`
+  rather than in that map itself. `ecc-review.el` no longer autoloads a
+  command of `ecc-review-files`, `ecc-review-talk` or `ecc-review-pr`.
+  `ecc-review-mode-map` names `diff-mode-map` as its parent itself, so
+  `M-n`, `M-p` and the other keys of `diff-mode` stay under the modules'.
+  Nothing changes for the user, except that one of those keys a user binds
+  in `ecc-review-mode-map` once `ecc-review` is loaded now survives the
+  three modules loading, as in the chat maps.
+- What a Space is and how a session is shown in one are in
+  `ecc-display.el`, below every module that shows a session: the
+  `ecc-space` struct and `ecc-space-list`, `-of-root`, `-at-p`,
+  `-tab-roots`, `-current`, `-forget` and the rest of the model, the tabs,
+  the layouts of `ecc-space-cycle-layout`, `ecc-space-display-session`
+  and `ecc-space-display-beside-session`, all under the same names, with
+  `ecc-space-always-session`. So are the session picker,
+  `ecc-window-read-session` and `ecc-window-resolve-session`, and
+  `ecc-window-context-project-root`, which read the Spaces. `ecc-space.el`
+  keeps the commands -- `ecc-space-goto`, `-jump`, `-close`, `-zoom`,
+  `-cycle-layout` -- the Space picker, `ecc-space-select` and what closes
+  a Space when its last session goes. `ecc-window.el` keeps the projects,
+  the source buffers and the regions, and names nothing above it.
+  Restoring and removing a worktree no longer load `ecc-space` to reach a
+  Space. Saving the open sessions reads the frame's tabs without making
+  its first one, which had scheduled a second save from inside the first.
+- **Behaviour change.** Showing a session starts nothing. A worktree's
+  repository opened on the way to it -- a session started in the
+  worktree, a recording of it opened, a restore -- comes up as a tab with
+  no session in it. Going there with `C-c c j`, a number in the sidebar or
+  `RET` on its row starts one, under `ecc-space-always-session`, as going
+  to any empty Space does.
+- The last `ignore-errors` in ecc is gone. When a function another
+  package put on `project-find-functions` signals while ecc asks for the
+  name of a session's project -- for the header line or a Space -- the
+  error is now shown in the echo area, once per directory, instead of
+  being dropped; the directory's own name still stands in, and with
+  `debug-on-error` the error reaches the debugger.
+
+### Fixed
+
+- A Bash call that comes up open on the files it changed shows its
+  `description:` and the diff, and no longer its `command:` or its `→`
+  output. 0.4.2 cut a command of several lines to
+  `ecc-render-result-max-lines`, but a command of one long line was never
+  cut: wrapped to five lines, with the output under it, it still stood
+  between the description and `Updated FILE (+n -m)`. The heading already
+  says the command. A call that failed keeps its output, which is what
+  says why. A call the CLI could not diff, which shows only a note such as
+  `(file diff unavailable for this command)`, keeps its command and its
+  output, as there is no diff to show instead. `RET` and `o` still show
+  the command, the output and the whole diff. Every other tool call, and
+  a Bash call that changed no file, is drawn as before, its inputs of
+  several lines cut as 0.4.2 cut them.
+- `C` in `ecc-menu`, and `M-x ecc-capabilities-show`, show the
+  Capabilities of the session they are called from, or of the most recent
+  one. Since 0.1.0 they stopped at "No session on this line" anywhere but
+  on a row of the dashboard, as the session was asked of the dashboard
+  first.
+- `M-x ecc-skill-show` shows the skills of the session buffer it is called
+  from, or of the most recent session. Since 0.2.0, once the dashboard had
+  been loaded -- and `ecc` loads it -- it stopped at "No session on this
+  line" anywhere but on a row of the dashboard, the same fault as the
+  Capabilities above.
+
+### Removed
+
+- **Breaking.** The dashboard: `ecc-dashboard`, `C-c c B` and `B` in
+  `ecc-menu` (`C-c c ?`). The sidebar is the one list of the sessions:
+  `C-c c b` (`ecc-sidebar-focus`) goes into it, and its keys do what the
+  dashboard's did -- `RET` goes to the session, `c` starts one, `k` stops
+  it, `r` resumes it (`C-u r` forks), `R` renames it, and `a` / `d` answer
+  what it waits on. A recording is deleted with `ecc-delete-recording`,
+  also `d` in `ecc-resume-menu`, and Capabilities are `C` in `ecc-menu`.
+  `ecc-dashboard` stays as an obsolete alias of `ecc-sidebar-focus`, so a
+  key of your own bound to it opens the sidebar. The `⚠ecc:N` indicator in
+  the mode line, which opened the dashboard on `mouse-1`, now goes to the
+  next waiting request, as `C-c c n` does.
+- **Breaking.** What only the dashboard showed, with nothing in its place:
+  the header line's count of waiting, running and idle sessions, the total
+  cost and the worst rate limit as a bar; the model, last prompt, last
+  answer time and cost columns; and its `S`, the skills of the row's
+  session (`M-x ecc-skill-show` and `/skills` in the prompt still show
+  them). `M-x ecc-usage` (`C-c c U`) still shows the rate limits.
+- **Breaking.** The layout without Spaces, with transcripts in side
+  windows with the roles main, sub-1 and sub-2. Every project has a Space,
+  a tab of its own, and every session is shown in the Space of its
+  project. `ecc-use-spaces` is no longer a setting: it has no effect, and
+  an init that sets it is warned when it is compiled. If yours set it to
+  nil, sessions now open in a tab per project beside its source, the
+  sidebar and the Space commands (`C-c c j`, `C-c c V`, `C-c c z`) work,
+  and `ecc-show-session` (`C-c c v`) goes to the session's tab.
+- **Breaking.** If you use the tab bar for other work, a transcript no
+  longer opens in a side window of the tab you are in: starting,
+  answering or resuming a session from another tab switches to the
+  session's Space. A review Claude opens is still shown without leaving
+  your tab.
+- **Breaking.** `ecc-window-large-frame-min-height` and
+  `ecc-window-sub-height`, and the variables `ecc-window-use-side-window`,
+  `ecc-window-side` and `ecc-window-height`. All five are obsolete and
+  have no effect. `ecc-window-width` keeps its name and is now only the
+  width of the session column of a Space.
+- **Breaking.** `ecc-focus-project`. `C-c c j` goes to a project's Space,
+  and `C-c c V` lays it out again.
+
 ## [0.4.5] - 2026-10-14
 
 Verified against **Claude Code CLI 2.1.290**.
@@ -3232,7 +3528,8 @@ Emacs 29.1, 29.4 and 30.1.
   notifications, and a `transient` menu on `ecc-global-map`.
 - `ecc-version` reports the ecc, Emacs and CLI versions a bug report needs.
 
-[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/wakamenod/emacs-claude-code/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.5.0
 [0.4.5]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.5
 [0.4.4]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.4
 [0.4.3]: https://github.com/wakamenod/emacs-claude-code/releases/tag/v0.4.3

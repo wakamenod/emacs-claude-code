@@ -34,13 +34,11 @@
 ;; marked with what it is doing -- and the sessions at the bottom, with
 ;; what each is waiting for.
 ;;
-;; It is the one place that says what every project is doing at once.
-;; The dashboard already lists the sessions and lists them better; what
-;; it does not do is stay on the screen while you work, which is the
-;; whole of what this is for.  So it is drawn narrow, it never takes the
-;; selected window, and everything in it is one key away: RET goes there,
-;; a and d answer what is waiting, TAB folds a repository's worktrees
-;; away.
+;; It is the one place that says what every project is doing at once,
+;; and it stays on the screen while you work, which is the whole of
+;; what it is for.  So it is drawn narrow, it never takes the selected
+;; window, and everything in it is one key away: RET goes there, a and
+;; d answer what is waiting, TAB folds a repository's worktrees away.
 ;;
 ;; It is drawn as text with properties rather than as a `tabulated-list':
 ;; two sections with different columns, and a second line under some
@@ -59,7 +57,9 @@
 (require 'mule-util)
 (require 'ecc-core)
 (require 'ecc-model)
+(require 'ecc-git)
 (require 'ecc-window)
+(require 'ecc-display)
 (require 'ecc-worktree)
 (require 'ecc-space)
 (require 'ecc-notify)
@@ -67,6 +67,7 @@
 (require 'ecc-answer)
 (require 'ecc-perm)
 (require 'ecc-lifecycle)
+(require 'ecc-session)
 
 (defconst ecc-sidebar-buffer-name "*ecc-sidebar*"
   "Name of the sidebar buffer.")
@@ -237,7 +238,7 @@ time."
   (let* ((branch (ecc-space-branch space))
          (named (equal (ecc-space-name space)
                        (and branch (string-remove-prefix "worktree/" branch))))
-         (ahead (and branch (ecc-worktree-ahead-behind (ecc-space-root space))))
+         (ahead (and branch (ecc-git-ahead-behind (ecc-space-root space))))
          (parts (delq nil
                       (list (and branch (not named) branch)
                             (and ahead (format "↑%d ↓%d"
@@ -445,7 +446,7 @@ Emacs 29.1 has no `tab-bar-tab-post-select-functions' -- it arrived in
 30.1 (verified 2026-09-14) -- so on 29.1 the change is noticed from
 `window-configuration-change-hook' instead, which is where selecting a
 tab shows up."
-  (let ((key (and ecc-use-spaces (ecc-space-current-key))))
+  (let ((key (ecc-space-current-key)))
     (unless (equal key ecc-sidebar--last-space)
       (setq ecc-sidebar--last-space key)
       (ecc-sidebar-redraw))))
@@ -571,10 +572,36 @@ The redraw is `ecc-worktree-removed-hook\\=''s, which every removal runs
       (ecc-kill session)
       (ecc-sidebar-redraw))))
 
+(defun ecc-sidebar-resume (&optional fork)
+  "Resume the session of the row at point, forking it when FORK is non-nil.
+What \\`C-c c r' does, on the session the row stands for: a stopped one
+is started again with --resume and a running one is gone to.
+Interactively, a prefix argument forks it into a new conversation."
+  (interactive "P")
+  (ecc-resume (or (ecc-sidebar--session-at-point)
+                  (user-error "No session on this line"))
+              fork))
+
+(defun ecc-sidebar-rename (name)
+  "Rename the session of the row at point to NAME.
+What \\`C-c c R' does, on the session the row stands for: the prompt
+offers the name it has, and `ecc-rename-session' renames its buffers
+and tells the CLI."
+  (interactive
+   (list (read-string "New name: "
+                      (ecc-session-name
+                       (or (ecc-sidebar--session-at-point)
+                           (user-error "No session on this line"))))))
+  (let ((session (or (ecc-sidebar--session-at-point)
+                     (user-error "No session on this line"))))
+    (when (string-empty-p (string-trim name))
+      (user-error "The name may not be empty"))
+    (ecc-rename-session session name)
+    (ecc-sidebar-redraw)))
+
 (defun ecc-sidebar--oldest-request ()
   "Return the request the session at point is waiting on.
-`ecc-answer-session-request\\=' is what says which, here and in the
-dashboard alike."
+`ecc-answer-session-request\\=' is what says which."
   (ecc-answer-session-request
    (or (ecc-sidebar--session-at-point)
        (user-error "No session on this line"))))
@@ -582,10 +609,9 @@ dashboard alike."
 (defun ecc-sidebar-allow ()
   "Allow what the session at point is waiting on.
 Whatever kind it is: `ecc-perm-allow-request\\=' approves a plan and opens
-a question where it is answered, which is what the dashboard\\='s `a\\=' has
-always done.  It used to refuse anything but a permission while `d\\='
-denied every kind, so a session waiting on a question could be denied
-from here but not answered."
+a question where it is answered.  It used to refuse anything but a
+permission while `d\\=' denied every kind, so a session waiting on a
+question could be denied from here but not answered."
   (interactive)
   (let ((request (ecc-sidebar--oldest-request)))
     (when (ecc-answer--confirm "Allow" request)
@@ -603,7 +629,7 @@ from here but not answered."
 (defun ecc-sidebar-refresh ()
   "Ask git again and draw the sidebar afresh."
   (interactive)
-  (ecc-worktree-forget)
+  (ecc-git-forget)
   (ecc-sidebar-redraw))
 
 (defvar ecc-sidebar-mode-map
@@ -615,9 +641,13 @@ from here but not answered."
     (define-key map (kbd "TAB") #'ecc-sidebar-toggle-children)
     (define-key map (kbd "c") #'ecc-sidebar-start-session)
     (define-key map (kbd "W") #'ecc-sidebar-start-worktree)
-    ;; `k' stops a session, `K' removes a worktree and `X' closes a
-    ;; Space: each a step larger than the one before, spelled as the
-    ;; menu spells them (`X' there, `k' in `ecc-worktree-menu').
+    ;; `r' resumes and `R' renames the session of the row, as `C-c c r'
+    ;; and `C-c c R' do.  `k' stops a session, `K' removes a worktree
+    ;; and `X' closes a Space: each a step larger than the one before,
+    ;; spelled as the menu spells them (`X' there, `k' in
+    ;; `ecc-worktree-menu').
+    (define-key map (kbd "r") #'ecc-sidebar-resume)
+    (define-key map (kbd "R") #'ecc-sidebar-rename)
     (define-key map (kbd "k") #'ecc-sidebar-kill-session)
     (define-key map (kbd "K") #'ecc-sidebar-remove-worktree)
     (define-key map (kbd "X") #'ecc-sidebar-close-space)
@@ -704,8 +734,8 @@ while working, and it is `no-other-window' for the same reason."
 ;;;###autoload
 (defun ecc-sidebar-hide ()
   "Take the sidebar off the screen, leaving its buffer alive.
-Only this window: `window-toggle-side-windows' would take the session
-windows of the `classic' layout down with it."
+Only this window: `window-toggle-side-windows' would take every other
+side window of the frame down with it."
   (interactive)
   (when-let* ((window (ecc-sidebar--window)))
     (delete-window window))
@@ -742,6 +772,9 @@ navigate around."
         (goto-char (point-min))
         (ecc-sidebar-next-line))
       window)))
+
+;;;###autoload
+(define-obsolete-function-alias 'ecc-dashboard #'ecc-sidebar-focus "0.5.0")
 
 (provide 'ecc-sidebar)
 

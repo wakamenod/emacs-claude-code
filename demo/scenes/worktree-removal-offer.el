@@ -79,7 +79,6 @@ say how many were asked since."
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t)
   (setq ecc-space-always-session t)
   (setq demo-sessions nil
         demo-answers nil
@@ -96,25 +95,24 @@ say how many were asked since."
   "Show the project, and say which ecc this is."
   (find-file (expand-file-name "greet.py" demo-root))
   (ecc-sidebar-show)
-  (demo-say (format "ecc from %s   --   layout %S"
-                    (abbreviate-file-name (locate-library "ecc-worktree"))
-                    ecc-use-spaces))
+  (demo-say (format "ecc from %s"
+                    (abbreviate-file-name (locate-library "ecc-worktree"))))
   nil)
 
 ;;;; What git and the model say
 
 (defun demo-report-git ()
   "Say what worktrees and what branches the repository has."
-  (let* ((trees (seq-remove #'ecc-worktree-entry-main-p
-                            (ecc-worktree-list demo-root)))
+  (let* ((trees (seq-remove #'ecc-git-worktree-entry-main-p
+                            (ecc-git-worktrees demo-root)))
          (names (mapcar (lambda (entry)
                           (file-name-nondirectory
                            (directory-file-name
-                            (ecc-worktree-entry-path entry))))
+                            (ecc-git-worktree-entry-path entry))))
                         trees)))
     (demo-say (format "git worktree list: %s      git branch: %s"
                       (if names (string-join names ", ") "(only the repository)")
-                      (string-join (sort (ecc-worktree-branches demo-root)
+                      (string-join (sort (ecc-git-branches demo-root)
                                          #'string<)
                                    ", "))))
   nil)

@@ -73,9 +73,8 @@
 (require 'ecc-proc)
 (require 'json)
 (require 'ecc-window)
+(require 'ecc-display)
 (require 'ecc-capability)
-
-(declare-function ecc-dashboard-session-at-point "ecc-dashboard" ())
 
 ;;;; Options
 
@@ -842,10 +841,6 @@ column the description happens to reach."
 (defun ecc-skill--read-session ()
   "Return the session the skills should be shown of."
   (or ecc-skill--session
-      ;; `ecc-dashboard' requires this file and cannot be required back;
-      ;; the dashboard's row counts only once it has been loaded.
-      (and (fboundp 'ecc-dashboard-session-at-point)
-           (ecc-dashboard-session-at-point))
       (ecc-window-buffer-session)
       (car (ecc-model-sessions))
       (user-error "No session to look at")))

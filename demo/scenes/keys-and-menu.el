@@ -43,9 +43,10 @@
   nil)
 
 (defun demo-report-setting ()
-  "Say what the layout setting is, and that the old one is gone."
-  (demo-say (format "ecc-use-spaces = %S (default t) -- ecc-layout is %s"
-                    ecc-use-spaces
+  "Say that the layout settings are gone, the old and the newer one."
+  (demo-say (format "ecc-use-spaces is %s -- ecc-layout is %s"
+                    (if (get 'ecc-use-spaces 'byte-obsolete-variable)
+                        "obsolete" "STILL A SETTING")
                     (if (boundp 'ecc-layout) "STILL BOUND" "gone")))
   nil)
 
@@ -65,8 +66,9 @@
   (demo-keys "C-c c j" "C-c c b" "C-c c z" "C-c c V"))
 
 (defun demo-report-moved-keys ()
-  "The keys that now mean something else, and the one that is watched."
-  (demo-keys "C-c c B" "C-c c r" "C-c c c"))
+  "The keys that now mean something else, and the one that is watched.
+`C-c c B' was the dashboard here until 0.5.0 took it away."
+  (demo-keys "C-c c r" "C-c c c"))
 
 (defun demo-report-review-keys ()
   "The review key, whose menu holds both reviews."
@@ -89,10 +91,10 @@
   nil)
 
 (defun demo-report-kept-command ()
-  "Say that what the removed command was built on is still there."
-  (demo-say (format "ecc-focus-project is %s and is M-x now; ecc-window--focus-source is %s"
-                    (if (commandp 'ecc-focus-project) "a command" "NOT a command")
-                    (if (fboundp 'ecc-window--focus-source) "kept" "GONE")))
+  "Say that the command of the side windows is gone with them."
+  (demo-say (format "ecc-focus-project is %s; ecc-window--focus-source is %s"
+                    (if (fboundp 'ecc-focus-project) "STILL HERE" "gone")
+                    (if (fboundp 'ecc-window--focus-source) "STILL HERE" "gone")))
   nil)
 
 ;;;; The keys of a session buffer

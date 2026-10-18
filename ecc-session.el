@@ -29,11 +29,12 @@
 
 ;;; Commentary:
 
-;; The buffer a conversation is read and written in, and the commands
-;; that act on it: visiting what is at point, reviewing, and taking
-;; things out of the transcript.  The major mode, the keymaps and the
-;; movement live in `ecc-chat'; the keys of the commands here are in
-;; keymaps of their own at the end of this file, made parents of those.
+;; The commands that act on the buffer a conversation is read and
+;; written in: visiting what is at point, reviewing, and taking things
+;; out of the transcript.  The major mode, the keymaps, the movement and
+;; the making of the buffer live in `ecc-chat'; the keys of the commands
+;; here are in keymaps of their own at the end of this file, made parents
+;; of those.
 
 ;;; Code:
 
@@ -45,48 +46,15 @@
 (require 'ecc-proc)
 (require 'ecc-render)
 (require 'ecc-chat)
+(require 'ecc-display)
 (require 'ecc-markdown)
 (require 'ecc-diff)
-(require 'ecc-window)
 (require 'ecc-visit)
 (require 'ecc-perm)
 (require 'ecc-plan)
 (require 'ecc-queue)
 (require 'ecc-review)
 (require 'ecc-lifecycle)
-
-(defun ecc-session--forget-on-kill ()
-  "Stop and forget the session when its buffer is killed.
-Killing the buffer is taken as killing the session: the CLI is
-stopped, the session leaves the list, and its line buffer goes with
-it, so that nothing lingers in the dashboard as an exited session with
-no buffer.  An agent transcript shares the session but is
-not its buffer, so killing it does nothing."
-  (when-let* ((session ecc-render--session))
-    (when (and (eq (current-buffer) (ecc-session-buffer session))
-               ;; `ecc-kill' has forgotten the session already; the
-               ;; buffers are all that is left to it.
-               (eq (ecc-model-session (ecc-session-id session)) session))
-      (ecc-proc-stop session)
-      (ecc-model-remove-session session)
-      (ecc-image-cleanup-session session)
-      (let ((buffer (ecc-session-stream-buffer session)))
-        (when (buffer-live-p buffer)
-          (kill-buffer buffer))))))
-
-(defun ecc-session-directory (session)
-  "Return the directory SESSION works in.
-The root it was started in, which is what `ecc-window-session-project\='
-asks as well: the buffer, the sidebar and the Spaces must not disagree
-about where a session is.  The cwd the CLI reports comes second and
-only for a session that has no root of its own -- one read back from a
-recording.  It is not asked first because CLI 2.1.272 reports as the
-session cwd whatever directory the last Bash tool call left it in
-\(confirmed 2026-09-16), so it says where a tool ran and not where the
-session lives."
-  (when-let* ((directory (or (ecc-session-project-root session)
-                             (ecc-session-cwd session))))
-    (file-name-as-directory (expand-file-name directory))))
 
 (defun ecc-session-set-root (session directory)
   "Move SESSION to DIRECTORY and take its buffer with it.
@@ -109,15 +77,12 @@ buffer."
       (force-mode-line-update t)
       directory)))
 
-(defun ecc-session-buffer-name (name)
-  "Return the name of the buffer of the session called NAME."
-  (format "*ecc: %s*" name))
-
 (defun ecc-session--rename-buffer (session)
   "Give the buffer of SESSION the name SESSION has now.
 On `ecc-session-renamed-hook\=', ahead of the rest of it: what runs after
-reads the buffer by its new name.  A session has no buffer until this
-file makes one, so nothing is lost while it is not loaded."
+reads the buffer by its new name.  A session has no buffer until
+`ecc-session-ensure-buffer' makes one, and that loads this file first,
+so nothing is lost while it is not loaded."
   (when (buffer-live-p (ecc-session-buffer session))
     (with-current-buffer (ecc-session-buffer session)
       (rename-buffer (ecc-session-buffer-name (ecc-session-name session)) t)))
@@ -152,28 +117,6 @@ call the session NAME (`ecc-session-rename\=')."
    (let ((session (ecc-window-resolve-session current-prefix-arg)))
      (list session (read-string "New name: " (ecc-session-name session)))))
   (ecc-session-rename session name))
-
-(defun ecc-session-ensure-buffer (session)
-  "Return the buffer of SESSION, creating and drawing it if needed."
-  (let ((buffer (ecc-session-buffer session)))
-    (unless (buffer-live-p buffer)
-      ;; The modules above `ecc-chat' give the buffer its keys, its
-      ;; completion and its part of the mode line, and not every way here
-      ;; has loaded them: a recording opened from a cold Emacs comes
-      ;; through `ecc-history' alone.
-      (ecc--require-package)
-      (setq buffer (get-buffer-create
-                    (ecc-session-buffer-name (ecc-session-name session))))
-      (setf (ecc-session-buffer session) buffer)
-      (with-current-buffer buffer
-        ;; The buffer lives in the project, so that project commands and
-        ;; `ecc-next-attention-in-project' see the right root.
-        (setq default-directory (or (ecc-session-directory session)
-                                    default-directory))
-        (ecc-chat-mode)
-        (add-hook 'kill-buffer-hook #'ecc-session--forget-on-kill nil t)
-        (ecc-render-setup session buffer)))
-    buffer))
 
 (defun ecc-session-at-point ()
   "Return the session of the current buffer, or signal an error."

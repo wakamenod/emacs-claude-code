@@ -60,7 +60,7 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
   :bind-keymap ("C-c c" . ecc-global-map))
 ```
 
-`ecc-global-map` で、リクエストへの応答、応答待ちのセッションへの移動、ダッシュボードの表示をどのバッファからでもできます。このサイトではキーを `C-c c` で書いています。[キーバインド](/emacs-claude-code/ja/reference/key-bindings/)を参照してください。
+`ecc-global-map` で、リクエストへの応答、応答待ちのセッションへの移動、サイドバーの表示をどのバッファからでもできます。このサイトではキーを `C-c c` で書いています。[キーバインド](/emacs-claude-code/ja/reference/key-bindings/)を参照してください。
 
 ほかの設定も含めた例は、README の[作者の設定](https://github.com/wakamenod/emacs-claude-code/blob/main/README.ja.md#設定例)を参照してください。
 

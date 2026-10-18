@@ -359,8 +359,8 @@ a session buffer wants `ecc-dispatch'.  RESUME and FORK are passed to
     ;; message it raises names `with-editor' or whatever advice is on
     ;; it rather than the session.  Said here instead, and the session
     ;; that never came up is taken out of the list below: one left at
-    ;; `starting' with no process sits in the sidebar and the dashboard
-    ;; for ever, and nothing ever takes it out.
+    ;; `starting' with no process sits in the sidebar for ever, and
+    ;; nothing ever takes it out.
     (unless (file-directory-p default-directory)
       (ecc-proc--start-failed session)
       (user-error "%s is not there; %s cannot start"

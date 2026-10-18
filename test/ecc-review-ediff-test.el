@@ -33,7 +33,7 @@
 
 (defun ecc-review-ediff-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY, failing the test when it fails."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (cdr result)))
@@ -93,7 +93,7 @@ batch frame, 24 of them, does not have to spare."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 ;; The session changes one file, makes one and deletes one.
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (ecc-review-ediff-test--write (concat directory "made.txt") "new\n")
@@ -173,7 +173,7 @@ batch frame, 24 of them, does not have to spare."
                 (ecc-review-ediff-test--write (concat directory "x.txt") "mine\n")
                 (ecc-review-ediff-test--write (concat directory "was-here.txt") "already\n")
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "x.txt") "theirs\n")
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
@@ -201,7 +201,7 @@ batch frame, 24 of them, does not have to spare."
       (ecc-review-ediff-test--with-directory directory
         (ecc-review-ediff-test--repository directory)
         (setf (ecc-session-project-root session) directory)
-        (should (ecc-review-ensure-baseline session))
+        (should (ecc-git-ensure-baseline session))
         (should-error (ecc-review-ediff-buffer session) :type 'user-error)))))
 
 (ert-deftest ecc-review-ediff-test-layout-can-be-set-back ()
@@ -215,7 +215,7 @@ batch frame, 24 of them, does not have to spare."
               (let ((ecc-review-ediff-file-spacing 0))
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (ecc-review-ediff-test--write (concat directory "made.txt") "new\n")
                 (setq control (ecc-review-ediff-buffer session))
@@ -243,7 +243,7 @@ batch frame, 24 of them, does not have to spare."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
@@ -298,7 +298,7 @@ comments, as in the diff review; b says what a review is."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
@@ -334,7 +334,7 @@ font-lock."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "code.py") "def greet():\n    return 1\n")
                 (setq control (ecc-review-ediff-buffer session))
@@ -380,7 +380,7 @@ line as n and p walk it."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "x.txt") "one\nchanged\nand again\n")
                 (ecc-review-ediff-test--write
@@ -450,7 +450,7 @@ for and of which windows."
                            (push (cons window left) asked))))
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "x.txt") "two\n")
                 (setq control (ecc-review-ediff-buffer session))
@@ -484,7 +484,7 @@ for and of which windows."
                     (ecc-review-ediff-current-diff-mark nil))
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "x.txt") "two\n")
                 (setq control (ecc-review-ediff-buffer session))
@@ -506,7 +506,7 @@ for and of which windows."
               (let ((ecc-review-ediff-fontify nil))
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "code.py") "def greet():\n    return 1\n")
                 (setq control (ecc-review-ediff-buffer session))
@@ -535,7 +535,7 @@ so the graphical display and the focus are both stood in for."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (setq control (ecc-review-ediff-buffer session))
                 (should (eq (buffer-local-value 'ecc-review-ediff--frame control)
@@ -580,7 +580,7 @@ minibuffer the control frame of a graphical Emacs does not have."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 (delete-other-windows)
                 ;; Something else on the screen, which the review takes
@@ -634,7 +634,7 @@ given lines of the old side, and the old one none."
                 (ecc-review-ediff-test--git directory "add" "a.txt" "one.sh")
                 (ecc-review-ediff-test--git directory "commit" "-q" "-m" "a")
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 ;; a.txt goes and b.txt comes with its text; two scripts
                 ;; much like one.sh come, and one.sh grows by a lot.
                 (delete-file (concat directory "a.txt"))
@@ -692,7 +692,7 @@ given lines of the old side, and the old one none."
                (ecc-review-ediff-test--git directory "add" "x.txt")
                (ecc-review-ediff-test--git directory "commit" "-q" "-m" "x")
                (setf (ecc-session-project-root ,session) directory)
-               (should (ecc-review-ensure-baseline ,session))
+               (should (ecc-git-ensure-baseline ,session))
                (ecc-review-ediff-test--write (concat directory "x.txt") ,new)
                (setq ,control (ecc-review-ediff-buffer ,session))
                (with-current-buffer ,control
@@ -810,7 +810,7 @@ the current buffer around it, as Emacs 31 does."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (with-temp-file (concat directory "photo.png")
                   (set-buffer-multibyte nil)
                   (insert "\211PNG\r\n\032\n" (make-string 64 0) "\377\330\377"))
@@ -843,10 +843,10 @@ the current buffer around it, as Emacs 31 does."
     (ecc-review-ediff-test--repository directory)
     (ecc-review-ediff-test--write (concat directory "x.txt") "second\n")
     (ecc-review-ediff-test--git directory "commit" "-q" "-a" "-m" "second")
-    (let* ((root (ecc-review-git-root directory))
+    (let* ((root (ecc-git-root directory))
            (head (ecc-review--head-tree root))
            (first (string-trim (ecc-review-ediff-test--git directory "rev-parse"
-                                                     "HEAD~1^{tree}"))))
+                                                           "HEAD~1^{tree}"))))
       ;; A revision is compared with the working tree as it stands.
       (ecc-review-ediff-test--write (concat directory "x.txt") "working\n")
       (let ((trees (ecc-review-ediff--trees root "HEAD")))
@@ -863,7 +863,7 @@ the current buffer around it, as Emacs 31 does."
       ;; The empty range is the index against the working tree.
       (ecc-review-ediff-test--git directory "add" "x.txt")
       (let ((trees (ecc-review-ediff--trees root "")))
-        (should (equal (car trees) (ecc-review-snapshot root t)))
+        (should (equal (car trees) (ecc-git-snapshot root t)))
         (should-not (equal (car trees) head)))
       (should-error (ecc-review-ediff--trees root "no-such-revision")
                     :type 'user-error))))
@@ -874,7 +874,7 @@ the current buffer around it, as Emacs 31 does."
   (ecc-review-ediff-test--with-directory directory
     (ecc-review-ediff-test--git directory "init" "-q")
     (ecc-review-ediff-test--write (concat directory "x.txt") "one\n")
-    (let* ((root (ecc-review-git-root directory))
+    (let* ((root (ecc-git-root directory))
            (trees (ecc-review-ediff--trees root "HEAD")))
       (should (equal (car trees) (ecc-review--empty-tree root)))
       (should-not (equal (car trees) (cdr trees))))))
@@ -914,7 +914,7 @@ the current buffer around it, as Emacs 31 does."
   "Make DIRECTORY a repository SESSION changed two files of, and open it."
   (ecc-review-ediff-test--repository directory)
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (delete-file (concat directory "gone.txt"))
   (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
   (ecc-review-ediff-buffer session))
@@ -1165,7 +1165,7 @@ Open its ediff review and return the control buffer."
   (ecc-review-ediff-test--git directory "add" "a.txt")
   (ecc-review-ediff-test--git directory "commit" "-q" "-m" "a")
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (ecc-review-ediff-test--write (concat directory "a.txt") ecc-review-ediff-test--changed)
   (ecc-review-ediff-buffer session))
 
@@ -1589,7 +1589,7 @@ fingerprint no longer matches, so the next reading is not skipped."
                 (ecc-review-ediff-test--git directory "add" "b.txt")
                 (ecc-review-ediff-test--git directory "commit" "-q" "-m" "b")
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "b.txt") "a\ne\n")
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
@@ -1773,8 +1773,8 @@ unchanged review reads no file at all."
                               (lambda (text path)
                                 (push path coloured)
                                 (funcall fontify text path)))
-                             (git (symbol-function 'ecc-review--git))
-                             ((symbol-function 'ecc-review--git)
+                             (git (symbol-function 'ecc-git-run))
+                             ((symbol-function 'ecc-git-run)
                               (lambda (directory &rest args)
                                 (when (equal (car args) "cat-file") (cl-incf read))
                                 (apply git directory args)))
@@ -1809,7 +1809,7 @@ unchanged review reads no file at all."
       (should (string-prefix-p "Nothing is staged in "
                                (plist-get (ecc-review-ediff--content session 'staged nil nil)
                                           :nothing)))
-      (should (ecc-review-ensure-baseline session))
+      (should (ecc-git-ensure-baseline session))
       (should (equal (plist-get (ecc-review--session-content session nil) :nothing)
                      (plist-get (ecc-review-ediff--content session nil nil nil) :nothing))))))
 
@@ -1837,7 +1837,7 @@ blank line put in further down that says the same."
                 (ecc-review-ediff-test--git directory "add" "c.txt")
                 (ecc-review-ediff-test--git directory "commit" "-q" "-m" "c")
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  file (ecc-review-ediff-test--numbered
                        120 (lambda (n) (pcase n
@@ -1887,7 +1887,7 @@ with the same files: the paths it keeps are relative to the repository."
                 (ecc-review-ediff-test--git directory "add" ".")
                 (ecc-review-ediff-test--git directory "commit" "-q" "-m" "sub")
                 (setf (ecc-session-project-root session) sub)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat sub "a.el") "two\n")
                 (ecc-review-ediff-test--write (concat sub "b.el") "two\n")
                 (setq control (ecc-review-ediff-buffer session (list "a.el")))
@@ -1971,7 +1971,7 @@ computing and on a comment being removed."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "code.py") "def greet():\n    return 1\n")
                 (setq control (ecc-review-ediff-buffer session))
@@ -1999,7 +1999,7 @@ a submodule is named as one."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-directory directory
     (ecc-review-ediff-test--repository directory)
-    (let* ((root (ecc-review-git-root directory))
+    (let* ((root (ecc-git-root directory))
            (first (string-trim (ecc-review-ediff-test--git directory "rev-parse" "HEAD")))
            (left (ecc-review--head-tree root)))
       (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
@@ -2011,8 +2011,8 @@ a submodule is named as one."
         (should (equal (assoc "module" (ecc-review-ediff-pairs root left right))
                        '("module" "" "" "submodule, not shown" nil nil "A")))
         (let ((logged nil))
-          (cl-letf* ((git (symbol-function 'ecc-review--git))
-                     ((symbol-function 'ecc-review--git)
+          (cl-letf* ((git (symbol-function 'ecc-git-run))
+                     ((symbol-function 'ecc-git-run)
                       (lambda (directory &rest args)
                         (if (equal (car args) "cat-file")
                             '(128 . "fatal: bad object")
@@ -2129,7 +2129,7 @@ buffer."
   (ecc-review-ediff-test--git directory "add" "a.txt" "b.el")
   (ecc-review-ediff-test--git directory "commit" "-q" "-m" "long")
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (ecc-review-ediff-test--write
    (concat directory "a.txt")
    (ecc-review-ediff-test--numbered
@@ -2214,7 +2214,7 @@ says so.  Return the control buffer, standing on the third difference."
   (ecc-review-ediff-test--git directory "add" "a.txt")
   (ecc-review-ediff-test--git directory "commit" "-q" "-m" "long")
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (ecc-review-ediff-test--write
    (concat directory "a.txt")
    (ecc-review-ediff-test--numbered
@@ -2339,7 +2339,7 @@ times are `scripts/bench-review-ediff.el's."
                          ((symbol-function 'input-pending-p) #'ignore))
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "big.el")
                  (mapconcat (lambda (n) (format "(defun f%d (x)\n  \"Doc %d.\"\n  (+ x %d))\n" n n n))
@@ -2536,7 +2536,7 @@ the boundaries, a file comes out as it does coloured all at once."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "m.el") text)
                 (setq control (ecc-review-ediff-buffer session))
                 (with-current-buffer control
@@ -2604,7 +2604,7 @@ hides or links with."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write
                  (concat directory "notes.org")
                  "* Heading\nSee [[https://example.com][the site]] and *bold*.\nend\n")
@@ -2706,7 +2706,7 @@ it is named without being read alone."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-directory directory
     (ecc-review-ediff-test--repository directory)
-    (let* ((root (ecc-review-git-root directory))
+    (let* ((root (ecc-git-root directory))
            (left (ecc-review--head-tree root))
            (cache (make-hash-table :test #'equal))
            (alone 0)
@@ -2715,8 +2715,8 @@ it is named without being read alone."
       (ecc-review-ediff-test--write (concat directory "small.txt") "small\n")
       (ecc-review-ediff-test--git directory "add" ".")
       (ecc-review-ediff-test--git directory "commit" "-q" "-m" "big")
-      (cl-letf* ((git (symbol-function 'ecc-review--git))
-                 ((symbol-function 'ecc-review--git)
+      (cl-letf* ((git (symbol-function 'ecc-git-run))
+                 ((symbol-function 'ecc-git-run)
                   (lambda (directory &rest args)
                     (when (equal (car args) "cat-file") (cl-incf alone))
                     (apply git directory args)))
@@ -2867,7 +2867,7 @@ does not give is read alone, and a blob read before is not read again."
   (skip-unless (executable-find "git"))
   (ecc-review-ediff-test--with-directory directory
     (ecc-review-ediff-test--repository directory)
-    (let* ((root (ecc-review-git-root directory))
+    (let* ((root (ecc-git-root directory))
            (left (ecc-review--head-tree root)))
       (ecc-review-ediff-test--write (concat directory "x.txt") "two\nえ\n")
       (ecc-review-ediff-test--write (concat directory "gone.txt") "still here\n")
@@ -2879,8 +2879,8 @@ does not give is read alone, and a blob read before is not read again."
             (batches 0)
             (alone 0)
             (cache (make-hash-table :test #'equal)))
-        (cl-letf* ((git (symbol-function 'ecc-review--git))
-                   ((symbol-function 'ecc-review--git)
+        (cl-letf* ((git (symbol-function 'ecc-git-run))
+                   ((symbol-function 'ecc-git-run)
                     (lambda (directory &rest args)
                       (when (equal (car args) "cat-file") (cl-incf alone))
                       (apply git directory args)))
@@ -2894,10 +2894,10 @@ does not give is read alone, and a blob read before is not read again."
             (should (zerop alone))
             (pcase-dolist (`(,path ,before ,after ,_ ,before-blob ,after-blob) pairs)
               (should (equal before (if before-blob
-                                        (cdr (ecc-review--git root "cat-file" "blob" before-blob))
+                                        (cdr (ecc-git-run root "cat-file" "blob" before-blob))
                                       "")))
               (should (equal after (if after-blob
-                                       (cdr (ecc-review--git root "cat-file" "blob" after-blob))
+                                       (cdr (ecc-git-run root "cat-file" "blob" after-blob))
                                      "")))
               (when (equal path "x.txt") (should (equal after "two\nえ\n")))
               (when (equal path "crlf.txt") (should (equal after "a\r\nb\r\n")))))
@@ -3187,7 +3187,7 @@ Its comments are carried from the reading they were last on."
               (progn
                 (ecc-review-ediff-test--repository directory)
                 (setf (ecc-session-project-root session) directory)
-                (should (ecc-review-ensure-baseline session))
+                (should (ecc-git-ensure-baseline session))
                 (ecc-review-ediff-test--write (concat directory "x.txt") "two\n")
                 ;; The default is the one diff-mode buffer.
                 (should (eq ecc-review-style 'diff))
@@ -3200,6 +3200,51 @@ Its comments are carried from the reading they were last on."
                   (should (with-current-buffer control (derived-mode-p 'ediff-mode)))
                   (should-not (get-buffer "*ecc-review: test*"))))
             (ecc-review-ediff-test--quit control)))))))
+
+(ert-deftest ecc-review-ediff-test-the-style-is-a-method ()
+  "`ecc-review' and `ecc-review-range' open the style through generics.
+`ecc-review--open' and `ecc-review--open-range' are generics of
+`ecc-review' on `ecc-review-style' whose default is the diff review;
+`ecc-review-ediff' has the methods of `ediff'.  Outside git the review
+of a session is a diff whatever the style."
+  (ecc-test-with-fake-session session
+    (let ((calls nil)
+          (repository "/repo/"))
+      (cl-letf (((symbol-function 'ecc-review-buffer)
+                 (lambda (_session paths) (push (list 'diff paths) calls) 'buffer))
+                ((symbol-function 'ecc-review-range-buffer)
+                 (lambda (_session range root paths)
+                   (push (list 'diff range root paths) calls)
+                   'buffer))
+                ((symbol-function 'ecc-review--display)
+                 (lambda (buffer _session) (push (list 'display buffer) calls) 'window))
+                ((symbol-function 'ecc-review-ediff-buffer)
+                 (lambda (_session paths) (push (list 'ediff paths) calls) 'control))
+                ((symbol-function 'ecc-review-ediff-range-buffer)
+                 (lambda (_session range root paths)
+                   (push (list 'ediff range root paths) calls)
+                   'control))
+                ((symbol-function 'ecc-git-root) (lambda (_path) repository)))
+        (should (eq (ecc-review--open 'diff session '("a")) 'window))
+        (should (eq (ecc-review--open 'ediff session '("a")) 'control))
+        (should (eq (ecc-review--open-range 'diff session "HEAD" "/r/" '("a")) 'window))
+        (should (eq (ecc-review--open-range 'ediff session "HEAD" "/r/" '("a")) 'control))
+        (should (equal (nreverse calls)
+                       '((diff ("a")) (display buffer)
+                         (ediff ("a"))
+                         (diff "HEAD" "/r/" ("a")) (display buffer)
+                         (ediff "HEAD" "/r/" ("a")))))
+        ;; The commands dispatch on the setting.
+        (let ((ecc-review-style 'ediff))
+          (should (eq (ecc-review session) 'control))
+          (should (eq (ecc-review-range session "HEAD" "/r/") 'control)))
+        (let ((ecc-review-style 'diff))
+          (should (eq (ecc-review session) 'window))
+          (should (eq (ecc-review-range session "HEAD" "/r/") 'window)))
+        ;; No repository: no two trees to lay side by side.
+        (setq calls nil repository nil)
+        (should (eq (ecc-review--open 'ediff session nil) 'window))
+        (should (equal (nreverse calls) '((diff nil) (display buffer))))))))
 
 ;;;; The two windows: their keys, and point driving the review
 
@@ -3217,7 +3262,7 @@ Its comments are carried from the reading they were last on."
 
 (defun ecc-review-direct-test--git (directory &rest args)
   "Run git with ARGS in DIRECTORY, failing the test when it fails."
-  (let ((result (apply #'ecc-review--git directory args)))
+  (let ((result (apply #'ecc-git-run directory args)))
     (unless (and result (= (car result) 0))
       (ert-fail (format "git %s failed: %S" args result)))
     (cdr result)))
@@ -3262,7 +3307,7 @@ EXTRA is a list of (NAME OLD NEW): more files, changed from OLD to NEW.
 Return the control buffer, with ediff highlighting with faces."
   (ecc-review-direct-test--repository directory extra)
   (setf (ecc-session-project-root session) directory)
-  (should (ecc-review-ensure-baseline session))
+  (should (ecc-git-ensure-baseline session))
   (ecc-review-direct-test--write (concat directory "a.txt") ecc-review-direct-test--changed)
   (pcase-dolist (`(,name ,_ ,new) extra)
     (ecc-review-direct-test--write (concat directory name) new))

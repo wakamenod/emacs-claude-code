@@ -36,7 +36,7 @@
 ;; of the user, or of a plugin.
 ;;
 ;; Two modules need that lookup -- the Capabilities buffer of
-;; `ecc-dashboard' and the Skills buffer of `ecc-skill' -- and a third
+;; `ecc-capabilities' and the Skills buffer of `ecc-skill' -- and a third
 ;; would have had to require the first to get at it.  It lives here
 ;; instead, on its own, requiring nothing but the session.
 

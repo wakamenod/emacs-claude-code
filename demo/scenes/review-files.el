@@ -59,8 +59,8 @@
     (demo-write name (concat (demo-text name t) "\n")))
   (find-file (expand-file-name "src/app.py" demo-root))
   (delete-other-windows)
-  (demo-say (format "ecc %s   theme %S   ecc-use-spaces %S   five files changed"
-                    (ecc-version) custom-enabled-themes ecc-use-spaces))
+  (demo-say (format "ecc %s   theme %S   five files changed"
+                    (ecc-version) custom-enabled-themes))
   nil)
 
 (defun demo-start-session ()

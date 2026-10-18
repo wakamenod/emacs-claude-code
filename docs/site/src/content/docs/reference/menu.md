@@ -16,7 +16,7 @@ The menu acts on the session of the current buffer. Elsewhere it takes the proje
 | Key | Action | See |
 |---|---|---|
 | `c` | Start a session (`C-u c` asks for the directory and the name) | [Sessions](/emacs-claude-code/features/sessions/#where-a-session-starts) |
-| `r` | Resume a conversation (`-f` forks it) | [Resuming](/emacs-claude-code/features/sessions/#resuming-conversations) |
+| `r` | Resume a conversation (`-f` forks it), or `d` to delete a recording | [Resuming](/emacs-claude-code/features/sessions/#resuming-conversations) |
 | `S` | Restart the CLI, keeping the transcript | [Restarting](/emacs-claude-code/features/sessions/#restarting-the-cli) |
 | `k` | Stop the process and kill the buffers; the recording stays | [Sessions](/emacs-claude-code/features/sessions/) |
 | `R` | Rename the session | [Sessions](/emacs-claude-code/features/sessions/) |
@@ -55,7 +55,6 @@ The menu acts on the session of the current buffer. Elsewhere it takes the proje
 
 | Key | Action | See |
 |---|---|---|
-| `B` | Dashboard | [Dashboard](/emacs-claude-code/features/sessions/#the-dashboard) |
 | `C` | Capabilities | [Capabilities](/emacs-claude-code/features/other/#capabilities) |
 | `h` | Read a recorded conversation; `r` in it resumes it | [Resuming](/emacs-claude-code/features/sessions/#resuming-conversations) |
 | `/` | Search past conversations | [Searching](/emacs-claude-code/features/sessions/#searching-past-conversations) |

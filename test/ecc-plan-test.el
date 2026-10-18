@@ -105,7 +105,7 @@
             (setf (ecc-request-input request)
                   (cons (cons 'planFilePath path)
                         (assq-delete-all 'planFilePath (ecc-request-input request))))
-            (ecc-plan-approve-request request)
+            (ecc-perm-approve-plan-request request)
             (ecc-render-flush session)
             (with-current-buffer (ecc-session-buffer session)
               (should (ecc-render-goto-id (ecc-node-id node)))
@@ -130,7 +130,7 @@ resume too, where the permission request is not replayed."
       ;; A plan shown again names the same file and is not listed twice.
       (ecc-model-note-plan-file session path)
       (should (equal (ecc-model-plan-files session) (list path)))
-      (ecc-plan-approve-request request)
+      (ecc-perm-approve-plan-request request)
       (ecc-render-flush session)
       (with-current-buffer (ecc-session-buffer session)
         (should (string-search "Plan (1)" (ecc-test-buffer-string)))

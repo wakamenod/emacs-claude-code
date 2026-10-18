@@ -3,7 +3,7 @@ title: Spaces and worktrees
 description: One tab per project, a sidebar listing every project and session, and git worktrees a session can live in.
 ---
 
-A **Space** is a project with an Emacs tab of its own. A git worktree is a Space of its own too, shown under its repository. Spaces are on by default (`ecc-use-spaces`); the layout without them is described [at the end](#without-spaces).
+A **Space** is a project with an Emacs tab of its own. A git worktree is a Space of its own too, shown under its repository.
 
 ## How a Space works
 
@@ -56,10 +56,12 @@ The top half lists the Spaces with their state, their number and their name. A r
 | `1`–`9` | Go to the Space with that number |
 | `c` | Start a session in this Space |
 | `W` | Create a worktree from this Space and start a session there |
+| `r` | Resume this session (`C-u r`: fork it), or go to it if it is running |
+| `R` | Rename this session |
 | `k` | Stop this session |
 | `K` | Remove this worktree's directory |
 | `X` | Close this Space |
-| `a`, `d` | Allow or deny what this session waits on, as the [dashboard](/emacs-claude-code/features/sessions/#the-dashboard) does |
+| `a`, `d` | Allow or deny what this session waits on ([details](/emacs-claude-code/features/permissions/#answering-a-request)) |
 | `g` | Refresh git status and redraw |
 | `q` | Hide the sidebar |
 
@@ -67,7 +69,7 @@ The top half lists the Spaces with their state, their number and their name. A r
 
 ## Worktrees
 
-A git worktree is a second working tree of a repository on a branch of its own, so two sessions can work on one project without seeing each other's edits. These commands work with Spaces on or off.
+A git worktree is a second working tree of a repository on a branch of its own, so two sessions can work on one project without seeing each other's edits.
 
 | Key | Command | Action |
 |---|---|---|
@@ -107,18 +109,3 @@ Removing a worktree also deletes the files git ignores in it, such as compiled `
 :::
 
 `remove_worktree` runs without asking while `ecc-worktree-auto-allow-removal` is on, which it is by default. A `claude` started outside ecc with the Emacs MCP server needs `mcp__emacs__remove_worktree` in its permission allow list.
-
-## Without Spaces
-
-```elisp
-(setq ecc-use-spaces nil)
-```
-
-With Spaces off, transcripts open in side windows, given the roles main, sub-1 and sub-2, with no tabs, no sidebar and no Space commands. Worktrees still work.
-
-| Setting | Default | Description |
-|---|---|---|
-| `ecc-window-large-frame-min-height` | `80` | Frame height in lines needed for a third session window. Below it, sessions share two windows and the tab line switches between them |
-| `ecc-window-sub-height` | `0.33` | Height of the third session window, as a fraction or in lines, taken from the main area |
-
-`M-x ecc-focus-project` shows one project's sessions and source, and takes the other projects' session windows off the screen. It kills nothing and stops no process.

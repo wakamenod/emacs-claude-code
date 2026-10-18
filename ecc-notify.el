@@ -266,7 +266,7 @@ row of tabs is the handful one is working among rather than every
 session this Emacs has open; `all' lists them all.
 
 A session outside the scope is still there and still reached:
-`ecc-switch-session' with a prefix argument, the dashboard and
+`ecc-switch-session' with a prefix argument, the sidebar and
 `ecc-next-attention' all cross projects.  Without one,
 `ecc-switch-session' offers the same sessions as the tabs.  What is
 given up is that its tab is not on the screen to blink when it wants an

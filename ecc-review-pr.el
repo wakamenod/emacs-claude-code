@@ -78,12 +78,9 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'ecc-core)
+(require 'ecc-git)
+(require 'ecc-chat)
 (require 'ecc-review)
-
-(declare-function ecc-review-ediff-quit "ecc-review-ediff" (control))
-(declare-function ecc-review-ediff-range-buffer "ecc-review-ediff"
-                  (session &optional range root paths))
-(declare-function ecc-review-direct-refresh-headers "ecc-review-ediff" (control))
 
 (defvar ecc-review-gh-executable "gh"
   "The gh program `p' in `ecc-review-menu' asks for pull requests.")
@@ -363,7 +360,7 @@ order."
 
 (defun ecc-review-pr--has-commit-p (root oid)
   "Return non-nil when the repository of ROOT has the commit OID."
-  (eq 0 (car (ecc-review--git root "cat-file" "-e" (concat oid "^{commit}")))))
+  (eq 0 (car (ecc-git-run root "cat-file" "-e" (concat oid "^{commit}")))))
 
 (defun ecc-review-pr--repo-of-url (url)
   "Return (HOST . OWNER/REPO) of URL, a remote or a pull request, lowercased.
@@ -392,8 +389,8 @@ else the same owner and repository, else URL's repository itself, to be
 fetched from by its address."
   (let* ((want (or (ecc-review-pr--repo-of-url url)
                    (user-error "Cannot tell the repository of %s" url)))
-         (remotes (pcase (ecc-review--git root "config" "--get-regexp"
-                                          "^remote\\..*\\.url$")
+         (remotes (pcase (ecc-git-run root "config" "--get-regexp"
+                                      "^remote\\..*\\.url$")
                     (`(0 . ,output)
                      (mapcar (lambda (line)
                                (let ((pair (split-string line " ")))
@@ -425,7 +422,7 @@ on the way.  Return non-nil when something was fetched."
                       (let ((oid (plist-get pr key)))
                         (and (member oid oids) (not (ecc-review-pr--has-commit-p root oid))))))
            (fetch (lambda (refspec)
-                    (ecc-review-pr--run ecc-review-git-executable root
+                    (ecc-review-pr--run ecc-git-executable root
                                         "fetch" "--quiet" "--no-tags" "--recurse-submodules=no"
                                         "--refmap=" remote refspec)))
            (failed nil))
@@ -501,7 +498,7 @@ other is its base to its head.  What is missing is fetched first
              ;; --full-history with the path: of the commits that are no
              ;; merge, those that change no file are what a path leaves
              ;; out, and without it git would follow one side of a merge.
-             (ecc-review-pr--run ecc-review-git-executable root
+             (ecc-review-pr--run ecc-git-executable root
                                  "log" "--no-merges" "--full-history" "--reverse"
                                  "--no-color" "--format=%H%x1f%h%x1f%s"
                                  (format "%s..%s" base head) "--" ".")
@@ -672,41 +669,35 @@ the rest; one with none is opened again as easily."
              (null (get-buffer-window review t)))
     (kill-buffer review)))
 
-(defun ecc-review-pr--open-ediff (walk session range)
-  "Open the ediff review of RANGE, of the pull request WALK, for SESSION."
-  (require 'ecc-review-ediff)
-  (ecc-review-pr-opening walk
-    (ecc-review-ediff-range-buffer session range (ecc-review-pr-walk-root walk))))
-
 (defun ecc-review-pr--go (walk index)
   "Open the review of the INDEXth commit of WALK in place of this one.
+How the one left is replaced depends on what kind of review it is
+\(`ecc-review-pr--replace')."
+  (ecc-review-pr--replace walk ecc-review--session
+                          (ecc-review-pr-commit-range walk index)
+                          (current-buffer)))
+
+(cl-defgeneric ecc-review-pr--replace (walk session range from)
+  "Open RANGE of WALK for SESSION in place of the review FROM; return it.
 A diff review is followed in its window by the next, and kept while it
-has comments (`ecc-review-pr--leave').  An ediff review takes the
-frame, so it is quit, its comments held by WALK, and the next opened
-in its place; if that cannot be opened, the one quit comes back."
-  (let* ((from (current-buffer))
-         (session ecc-review--session)
-         (root (ecc-review-pr-walk-root walk))
-         (range (ecc-review-pr-commit-range walk index)))
-    (if (derived-mode-p 'ediff-mode)
-        (let ((left ecc-review--range))
-          (ecc-review-pr--hold walk)
-          (ecc-review-ediff-quit from)
-          (condition-case err
-              (ecc-review-pr--open-ediff walk session range)
-            (error
-             (ecc-review-pr--open-ediff walk session left)
-             (signal (car err) (cdr err)))))
-      (let ((buffer (ecc-review-range-buffer session range root))
-            (window (if (eq (window-buffer) from) (selected-window) (get-buffer-window from))))
-        (ecc-review-pr--adopt walk buffer)
-        (if (not (window-live-p window))
-            (ecc-review--display buffer session)
-          (set-window-buffer window buffer)
-          (select-window window)
-          (run-hook-with-args 'ecc-review-displayed-functions buffer))
-        (ecc-review-pr--leave from)
-        buffer))))
+has comments (`ecc-review-pr--leave').  `ecc-review-ediff' has the
+method of an ediff review, which takes the frame.  Run in FROM."
+  (let ((buffer (ecc-review-range-buffer session range (ecc-review-pr-walk-root walk)))
+        (window (if (eq (window-buffer) from) (selected-window) (get-buffer-window from))))
+    (ecc-review-pr--adopt walk buffer)
+    (if (not (window-live-p window))
+        (ecc-review--display buffer session)
+      (set-window-buffer window buffer)
+      (select-window window)
+      (run-hook-with-args 'ecc-review-displayed-functions buffer))
+    (ecc-review-pr--leave from)
+    buffer))
+
+(cl-defgeneric ecc-review-pr--refresh-header (_buffer)
+  "Draw the header of the review BUFFER again, its pull request recounted.
+Run in BUFFER.  `ecc-review-ediff' has the method of an ediff review,
+whose mode lines say it."
+  (force-mode-line-update))
 
 (defun ecc-review-pr--step (forward)
   "Open the next commit of this pull request when FORWARD, else the previous.
@@ -812,9 +803,7 @@ review of it opened, left, sent or killed."
                  (eq (buffer-local-value 'ecc-review--walk buffer) walk)
                  (ecc-review-buffer-p buffer))
         (with-current-buffer buffer
-          (if (derived-mode-p 'ediff-mode)
-              (ecc-review-direct-refresh-headers buffer)
-            (force-mode-line-update)))))))
+          (ecc-review-pr--refresh-header buffer))))))
 
 (defun ecc-review-pr--on-draw ()
   "Count the comments of the pull request again, this review's being drawn.
@@ -840,6 +829,11 @@ when it never has been (`ecc-review-pr--count')."
   (let ((index (ecc-review-pr--index walk ecc-review--range)))
     (seq-remove (lambda (cell) (equal (car cell) index))
                 (ecc-review-pr-walk-unsent walk))))
+
+(cl-defmethod ecc-review-walk-status ((_walk ecc-review-pr-walk) &optional subject)
+  "Say which commit of its pull request this review is, with its SUBJECT.
+It is `ecc-review-pr-walk-status'."
+  (ecc-review-pr-walk-status subject))
 
 (defun ecc-review-pr-walk-status (&optional subject)
   "Return what this review says of the pull request it is a part of.
@@ -974,6 +968,22 @@ opened to be read over and changed first."
                         reviews)))
     (ecc-review-send-text session (ecc-review-pr-message walk reviews) (current-buffer) edit
                           (lambda () (ecc-review-pr--sent walk notes)))))
+
+;;;; Keys
+
+(defvar ecc-review-pr-review-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "]") #'ecc-review-pr-next-commit)
+    (define-key map (kbd "[") #'ecc-review-pr-previous-commit)
+    ;; C-c C-a was `diff-apply-hunk', which writes into the file the
+    ;; hunk is of: a review reads and comments, and Claude changes the
+    ;; files.
+    (define-key map (kbd "C-c C-a") #'ecc-review-pr-send-all)
+    map)
+  "The keys of a pull request read a commit at a time, in a diff review.
+A parent of `ecc-review-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-review-mode-map ecc-review-pr-review-map)
 
 (provide 'ecc-review-pr)
 

@@ -64,7 +64,6 @@
 (require 'ecc-core)
 (require 'ecc-model)
 (require 'ecc-review)
-(require 'ecc-window)
 (require 'ecc-mcp)
 
 (defvar ecc-review-agent-auto-allow t

@@ -11,7 +11,7 @@
 (require 'ert)
 (require 'ecc-test-helpers)
 (require 'ecc-transient)
-(require 'ecc-answer)
+(require 'ecc)
 (require 'ecc-review-menu)
 
 (ert-deftest ecc-transient-test-menu-is-a-command ()
@@ -91,14 +91,25 @@ of their own instead, reached by the key the command had in `ecc-menu\='."
     (should-not (seq-find (lambda (cell) (string-prefix-p "-" (car cell))) menu))
     (should (eq (cdr (assoc "r" menu)) 'ecc-resume-menu))
     (should (eq (cdr (assoc "A" menu)) 'ecc-allow-all-menu)))
-  (dolist (case '((ecc-resume-menu "-f" "--fork" "r" ecc-menu-resume)
+  (dolist (case '((ecc-resume-menu "-f" "--fork" "r" ecc-menu-resume
+                                   ("d"))
                   (ecc-allow-all-menu "-r" "--remember" "A" ecc-menu-allow-all)))
-    (seq-let (prefix switch argument key command) case
+    (seq-let (prefix switch argument key command others) case
       (let ((keys (ecc-transient-test--menu-keys prefix)))
         (should (equal (cdr (assoc switch keys)) argument))
         (should (eq (cdr (assoc key keys)) command))
-        ;; Nothing else, so the switch cannot be read as applying wider.
-        (should (= (length keys) 2))))))
+        ;; Nothing else but OTHERS, which sit in a group of their own, so
+        ;; the switch cannot be read as applying wider.
+        (should (equal (mapcar #'car keys)
+                       (append (list switch key) others)))))))
+
+(ert-deftest ecc-transient-test-resume-menu-deletes-a-recording ()
+  "`d' in the resume menu deletes a recording, in a group apart from --fork.
+The resume menu is where a recording is picked, so it is where one is
+deleted too."
+  (let ((keys (ecc-transient-test--menu-keys 'ecc-resume-menu)))
+    (should (eq (cdr (assoc "d" keys)) 'ecc-delete-recording))
+    (should (commandp 'ecc-delete-recording))))
 
 (ert-deftest ecc-transient-test-menu-keys-are-unique ()
   "A key opens one command in the menu."
@@ -269,11 +280,17 @@ Remote Control was never trusted with."
       (ecc-remote-control-copy-url)
       (should (equal (current-kill 0) "https://claude.ai/code/session_01")))))
 
-(ert-deftest ecc-transient-test-capabilities-is-c-as-in-the-dashboard ()
-  "Capabilities are `C' in the menu, the key the dashboard already used."
+(ert-deftest ecc-transient-test-capabilities-is-c ()
+  "Capabilities are `C' in the menu."
   (let ((menu (ecc-transient-test--menu-keys)))
     (should (eq (cdr (assoc "C" menu)) 'ecc-capabilities-show))
     (should-not (assoc "y" menu))))
+
+(ert-deftest ecc-transient-test-no-dashboard ()
+  "`B' was the dashboard until 0.5.0, and the menu no longer has it."
+  (let ((menu (ecc-transient-test--menu-keys)))
+    (should-not (assoc "B" menu))
+    (should-not (rassq 'ecc-dashboard menu))))
 
 (ert-deftest ecc-transient-test-review-menu ()
   "D opens the review menu, whose D is the review it used to open.

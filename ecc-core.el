@@ -231,27 +231,11 @@ command list to run.  Nil runs the command unchanged."
 
 ;;;; Layout
 
-(defcustom ecc-use-spaces t
-  "Non-nil gives every project a tab of the tab bar -- a Space -- of its own.
-The windows inside a tab are then left alone: a transcript opens as an
-ordinary window beside the source and is the user's to split, move and
-enlarge, and going to the project brings the whole arrangement back the
-way it was left.  A worktree is a project of its own here, under the
-repository it came from, and the sidebar lists them all.  That is the
-default because it is what the package is for: several projects at once,
-each where it was left.
-
-Nil is the older arrangement, and the only one before this: a transcript
-goes into a side window with a role -- main, sub-1, sub-2 -- the roles
-are dealt out as sessions arrive, and `ecc-focus-project' deals them
-again for one project.  There are no tabs, no sidebar and no worktree
-commands.
-
-It is a setting because it is a taste in how a screen should be laid
-out, and the two are not halfway compatible: everything follows the one
-that is chosen."
-  :type 'boolean
-  :group 'ecc)
+;; Every project has a Space -- a tab of the tab bar of its own -- and
+;; the side windows with roles that were the other way to lay sessions
+;; out are gone (0.5.0).  The setting stays obsolete, so that an init
+;; that still sets it is warned when it is compiled.
+(make-obsolete-variable 'ecc-use-spaces "Spaces are always on." "0.5.0")
 
 ;;;; Logging
 
@@ -755,7 +739,7 @@ is not a model to show, so nil comes back for it."
 
 (defun ecc--project-label (directory)
   "Return the name of DIRECTORY itself, without the path leading to it.
-A dashboard column has room for the project, not for where it lives."
+A sidebar row has room for the project, not for where it lives."
   (if (or (null directory) (equal directory ""))
       ""
     (file-name-nondirectory (directory-file-name (expand-file-name directory)))))

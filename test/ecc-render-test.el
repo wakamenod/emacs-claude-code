@@ -1397,7 +1397,10 @@ five the CLI showed are counted.  The call comes up open on them."
     (setf (ecc-session-project-root session) ecc-render-test--bash-root)
     (let ((text (ecc-render-test--replay session "bash-edit-diff" "bash"
                                          '(allow allow))))
-      (should (string-search (concat "    → (Bash completed with no output)\n"
+      ;; The description and the diff: the command is the heading's,
+      ;; and no output stands between the two.
+      (should (string-search (concat "a.txt && printf 'brand new…\n"
+                                     "    description: Run first command with sed, printf, and rm\n"
                                      "    Updated a.txt (+1 -1)\n"
                                      "    1  line one\n"
                                      "    2 -line two \n"
@@ -1408,6 +1411,10 @@ five the CLI showed are counted.  The call comes up open on them."
                                      "    1 -bee \n"
                                      "    Created new.txt (+1 -0)\n"
                                      "    1 +brand new \n")
+                             text))
+      (should (string-search (concat "m$i.txt…\n"
+                                     "    description: Run second command with for loop and sed\n"
+                                     "    Updated m1.txt (+1 -1)\n")
                              text))
       (should (string-search (concat "    Updated m5.txt (+1 -1)\n"
                                      "    1  n 5\n"
@@ -1474,7 +1481,8 @@ five the CLI showed are counted.  The call comes up open on them."
 (ert-deftest ecc-render-test-tool-input-is-clipped ()
   "A long value of a call's input is cut as its output is; RET shows it whole.
 A Bash call that wrote files through heredocs drew a hundred lines of
-command over the diff it came up open on (2026-10-13)."
+command over the diff it came up open on (2026-10-13); one that changed
+no file still draws its command, cut."
   (ecc-test-with-fake-session session
     (ecc-session-ensure-buffer session)
     (ecc-model-begin-turn session "bash")
@@ -1486,17 +1494,14 @@ command over the diff it came up open on (2026-10-13)."
                   :data `((name . "Bash")
                           (input . ((command . ,command)
                                     (description . "two\nlines")))
-                          (result . "")
-                          (bash-edit . (:files ((:path "/w/a.txt" :change updated
-                                                 :patch [((oldStart . 1) (oldLines . 1)
-                                                          (newStart . 1) (newLines . 1)
-                                                          (lines . ["-old" "+new"]))]))
-                                        :changed ("/w/a.txt") :more 0))))))
+                          (result . "out")))))
       (ecc-model-node-changed session node)
       (ecc-render-flush session)
+      (with-current-buffer (ecc-session-buffer session)
+        (ecc-render-show-node (ecc-node-id node)))
       (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
         ;; The head of the command, the count of the rest, then the
-        ;; short value whole and the diff under the output.
+        ;; short value whole and the output.
         (should (string-search (concat "    command:\n"
                                        "      echo c1\n"
                                        "      echo c2\n"
@@ -1504,14 +1509,11 @@ command over the diff it came up open on (2026-10-13)."
                                        "      … 7 more lines (RET)\n"
                                        "    description:\n"
                                        "      two\n"
-                                       "      lines\n")
+                                       "      lines\n"
+                                       "    → out\n")
                                text))
         ;; Past the heading, whose summary is the command on one line.
-        (should-not (string-search "      echo c4" text))
-        (should (string-search (concat "    Updated /w/a.txt (+1 -1)\n"
-                                       "    1 -old \n"
-                                       "    1 +new \n")
-                               text)))
+        (should-not (string-search "      echo c4" text)))
       (with-current-buffer (ecc-session-buffer session)
         (goto-char (point-min))
         (search-forward "… 7 more lines (RET)")
@@ -1524,6 +1526,95 @@ command over the diff it came up open on (2026-10-13)."
             (should (string-search "  echo c4\n" detail))
             (should (string-search "  echo c10\n" detail))
             (should-not (string-search "more lines" detail))))))))
+
+(defun ecc-render-test--bash-diff-node (session status &optional edit)
+  "Add to SESSION a finished Bash call of STATUS that changed a file.
+Its command is one long line, its output two lines.  EDIT is its
+bash-edit; by default one file with a hunk of eight lines."
+  (let ((node (ecc-model-add-node
+               session :type 'tool :status status
+               :data `((name . "Bash")
+                       (input . ((command . ,(concat "sed -i '' s/old/new/ a.txt"
+                                                     (make-string 200 ?x)))
+                                 (description . "Rewrite a.txt")))
+                       (result . "first out\nsecond out")
+                       (bash-edit
+                        . ,(or edit
+                               `(:files ((:path "/w/a.txt" :change updated
+                                          :patch [((oldStart . 1) (oldLines . 4)
+                                                   (newStart . 1) (newLines . 4)
+                                                   (lines . ["-o1" "-o2" "-o3" "-o4"
+                                                             "+n1" "+n2" "+n3" "+n4"]))]))
+                                 :changed ("/w/a.txt") :more 0)))))))
+    (ecc-model-node-changed session node)
+    (ecc-render-flush session)
+    node))
+
+(ert-deftest ecc-render-test-bash-diff-shows-description-and-diff ()
+  "A Bash call open on the files it changed draws its description and the diff.
+The command is the heading's, and its output stood between the two
+(2026-10-14).  RET shows the command, the output and the diff whole."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (let ((ecc-render-diff-max-lines 3))
+      (ecc-render-test--bash-diff-node session 'done)
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search (concat "    description: Rewrite a.txt\n"
+                                       "    Updated /w/a.txt (+4 -4)\n"
+                                       "    1 -o1 \n")
+                               text))
+        (should-not (string-search "command:" text))
+        (should-not (string-search "→" text))
+        (should-not (string-search "first out" text)))
+      (with-current-buffer (ecc-session-buffer session)
+        (goto-char (point-min))
+        (search-forward "description: Rewrite")
+        (let (shown)
+          (cl-letf (((symbol-function 'ecc-window-display-beside-session)
+                     (lambda (buffer _session) (setq shown buffer))))
+            (ecc-session-visit))
+          (should shown)
+          (let ((detail (with-current-buffer shown (buffer-string))))
+            (should (string-search (concat "s/old/new/ a.txt" (make-string 200 ?x))
+                                   detail))
+            (should (string-search "first out\nsecond out" detail))
+            (should (string-search "+n4" detail))
+            (should-not (string-search "more lines" detail))))))))
+
+(ert-deftest ecc-render-test-bash-diff-error-keeps-output ()
+  "A Bash call that changed files and then failed keeps its output.
+Nothing else says why it failed; the command stays the heading's."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (ecc-render-test--bash-diff-node session 'error)
+    (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+      (should (string-search (concat "    description: Rewrite a.txt\n"
+                                     "    → first out\n"
+                                     "    → second out\n"
+                                     "    Updated /w/a.txt (+4 -4)\n")
+                             text))
+      (should-not (string-search "command:" text)))))
+
+(ert-deftest ecc-render-test-bash-diff-unavailable-keeps-command ()
+  "A Bash call the CLI could not diff draws its command and output as before.
+It has a note and no diff, so nothing would stand in for them."
+  (ecc-test-with-fake-session session
+    (ecc-session-ensure-buffer session)
+    (ecc-model-begin-turn session "bash")
+    (let ((node (ecc-render-test--bash-diff-node
+                 session 'done '(:files nil :more 2 :unavailable t))))
+      (with-current-buffer (ecc-session-buffer session)
+        (ecc-render-show-node (ecc-node-id node)))
+      (let ((text (ecc-test-buffer-string (ecc-session-buffer session))))
+        (should (string-search "    command: sed -i '' s/old/new/ a.txt" text))
+        (should (string-search (concat "    description: Rewrite a.txt\n"
+                                       "    → first out\n"
+                                       "    → second out\n"
+                                       "    (file diff unavailable for this command;"
+                                       " 2 files changed)\n")
+                               text))))))
 
 (ert-deftest ecc-render-test-request-input-is-whole ()
   "A request waiting on the user draws its input whole, however long.

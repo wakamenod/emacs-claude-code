@@ -62,8 +62,7 @@
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t
-        ecc-space-always-session t
+  (setq ecc-space-always-session t
         demo-sessions nil
         demo-answers nil
         demo-asked nil)
@@ -84,9 +83,8 @@
 (defun demo-open-source ()
   "Show the project, and say which ecc this is."
   (find-file (expand-file-name "greet.py" demo-root))
-  (demo-say (format "ecc from %s   --   ecc-use-spaces = %S"
-                    (abbreviate-file-name (locate-library "ecc-sidebar"))
-                    ecc-use-spaces))
+  (demo-say (format "ecc from %s"
+                    (abbreviate-file-name (locate-library "ecc-sidebar"))))
   nil)
 
 ;;;; The sidebar itself
@@ -175,11 +173,10 @@
   nil)
 
 (defun demo-report-the-two-keys ()
-  "Say what the two keys that swapped now run."
+  "Say what `C-c c b' runs.
+`C-c c B', the dashboard it swapped with, went in 0.5.0."
   (with-current-buffer (get-file-buffer (expand-file-name "greet.py" demo-root))
-    (demo-say (format "C-c c b runs %S   --   C-c c B runs %S"
-                      (key-binding (kbd "C-c c b"))
-                      (key-binding (kbd "C-c c B")))))
+    (demo-say (format "C-c c b runs %S" (key-binding (kbd "C-c c b")))))
   nil)
 
 (defun demo-start-here (&optional name)

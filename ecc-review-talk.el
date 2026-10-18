@@ -67,6 +67,7 @@
 (require 'ecc-model)
 (require 'ecc-render)
 (require 'ecc-perm)
+(require 'ecc-chat)
 (require 'ecc-answer)
 (require 'ecc-context)
 (require 'ecc-review)
@@ -76,7 +77,6 @@
 (defvar ediff-window-A)
 (defvar ediff-buffer-B)
 (declare-function ediff-keep-window-config "ediff-wind" (control-buf))
-(declare-function ecc-review-ediff-stacked-p "ecc-review-ediff" (&optional control))
 
 (defcustom ecc-review-talk-reply-height 12
   "How many lines the reply pane under an ediff review takes, or nil for none.
@@ -532,6 +532,16 @@ The frame of its own goes too, when it shows this pane."
 
 ;;;;; Where it goes
 
+(defun ecc-review-talk-stacked-p (&optional control)
+  "Return non-nil when the review in CONTROL has one side above the other.
+CONTROL is the current buffer by default.  The split \\`|' toggles is
+what says so, not the setting the review opened with."
+  (eq (buffer-local-value 'ediff-split-window-function (or control (current-buffer)))
+      #'split-window-vertically))
+
+(define-obsolete-function-alias 'ecc-review-ediff-stacked-p
+  #'ecc-review-talk-stacked-p "0.5.0")
+
 (defun ecc-review-talk--side (review)
   "Return the side the reply pane of REVIEW goes on: `right' or `bottom'.
 On the right while the two sides of the review are one above the other
@@ -541,7 +551,7 @@ review counted, as wide as it is, while it is on the screen -- else at
 the bottom.  Run in the control buffer."
   (let ((frame (window-frame ediff-window-A))
         (files (ecc-review-files--pane-window review)))
-    (if (and (ecc-review-ediff-stacked-p review)
+    (if (and (ecc-review-talk-stacked-p review)
              (>= (- (window-total-width (frame-root-window frame))
                     ecc-review-talk-reply-width
                     (if files (window-total-width files) 0))
@@ -1129,6 +1139,22 @@ what the pane ends with, else the pane is written again."
       (force-mode-line-update))))
 
 (add-hook 'ecc-session-state-changed-hook #'ecc-review-talk--on-state)
+
+;;;; Keys
+
+(defvar ecc-review-talk-review-map
+  (let ((map (make-sparse-keymap)))
+    ;; t and M rather than N and m: N is the next file in a diff review,
+    ;; and m is ediff's wide display, and the keys are the same in both
+    ;; kinds of review (decided 2026-10-02).
+    (define-key map (kbd "T") #'ecc-review-talk-tour)
+    (define-key map (kbd "t") #'ecc-review-talk-next)
+    (define-key map (kbd "M") #'ecc-review-talk-message)
+    map)
+  "The keys of talking to the session in a diff review.
+A parent of `ecc-review-mode-map', so that a key bound there wins.")
+
+(ecc-chat-add-keymap-parent ecc-review-mode-map ecc-review-talk-review-map)
 
 (provide 'ecc-review-talk)
 

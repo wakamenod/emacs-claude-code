@@ -7,11 +7,10 @@
 ;;
 ;; * a session in a worktree is named by its branch, so the Space and
 ;;   the session under it are one spelling rather than two
-;;   (`ecc-worktree-session-name');
-;; * `a' and `d' in the sidebar and in the dashboard ask before they
-;;   answer, and neither answers a tool of `ecc-answer-exclude-tools' --
-;;   a shell command is read in the transcript, not from a row;
-;; * `k' in the dashboard asks, as the sidebar's always has;
+;;   (`ecc-git-session-name');
+;; * `a' and `d' in the sidebar ask before they answer, and neither
+;;   answers a tool of `ecc-answer-exclude-tools' -- a shell command is
+;;   read in the transcript, not from a row;
 ;; * `ecc-sidebar-width' is a setting;
 ;; * `ecc-worktree-directory' is a variable again, not a setting.
 ;;
@@ -28,7 +27,6 @@
 (require 'ecc)
 (require 'ecc-space)
 (require 'ecc-sidebar)
-(require 'ecc-dashboard)
 (require 'ecc-worktree)
 
 (defvar demo-sessions nil
@@ -70,8 +68,7 @@
 
 (defun demo-scene-build ()
   "Build the project and open it.  Called by demo.el once there is a frame."
-  (setq ecc-use-spaces t
-        ecc-space-always-session t
+  (setq ecc-space-always-session t
         ;; The machine's own default may allow a Write without asking,
         ;; and then the answering keys have nothing to answer.
         ecc-permission-mode "default"
@@ -259,29 +256,6 @@ row the redraw had left point on (2026-09-18)."
 (defun demo-sidebar-key (key &optional text prefix)
   "Run what KEY is bound to in the sidebar."
   (demo-run-key-in ecc-sidebar-buffer-name key text prefix))
-
-(defun demo-open-dashboard ()
-  "Open the dashboard, which is the same list in the form that does not stay."
-  (ecc-dashboard)
-  (demo-frame)
-  nil)
-
-(defun demo-dashboard-point-on (name)
-  "Put point, and the dashboard window's point, on the row of session NAME."
-  (let ((buffer (get-buffer "*ecc-dashboard*")))
-    (with-current-buffer buffer
-      (goto-char (point-min))
-      (unless (search-forward name nil t)
-        (error "No row called %s in the dashboard" name))
-      (beginning-of-line)
-      (when-let* ((window (get-buffer-window buffer t)))
-        (set-window-point window (point)))))
-  (demo-say (format "the dashboard's point is on %s" name))
-  nil)
-
-(defun demo-dashboard-key (key &optional text prefix)
-  "Run what KEY is bound to in the dashboard."
-  (demo-run-key-in "*ecc-dashboard*" key text prefix))
 
 (defun demo-report-message ()
   "Say what the last message of this Emacs was."
