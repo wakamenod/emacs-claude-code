@@ -51,7 +51,6 @@ interactive Emacs, and starting a CLI fails the test."
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (ecc-render-debounce 0)
-          (ecc-use-spaces nil)
           (ecc-visual-enable-icons nil)
           (ecc-visual-enable-spinner nil)
           (ecc-window--project-root-cache (make-hash-table :test #'equal))
@@ -328,20 +327,6 @@ The exit write stored only what was open, and the five were gone
           (delete-process process))
         (setf (ecc-session-process session) nil)))))
 
-(ert-deftest ecc-restore-test-classic-restores-sessions-and-no-space ()
-  "Under `ecc-use-spaces' nil the sessions come back and no Space is opened."
-  (ecc-restore-test--with-world
-    (ecc-restore-test--two-sessions)
-    (let ((tabs (length (funcall tab-bar-tabs-function))))
-      (cl-letf (((symbol-function 'ecc-space-select)
-                 (lambda (&rest _) (ert-fail "a Space was opened")))
-                ((symbol-function 'ecc-space-tab-roots)
-                 (lambda (&rest _) (ert-fail "the Spaces were asked"))))
-        (should (= 2 (length (ecc-restore))))
-        (should (= tabs (length (funcall tab-bar-tabs-function))))
-        ;; Saving under `classic' does not ask the Spaces either.
-        (should-not (plist-get (ecc-restore-state) :spaces))))))
-
 ;;;; What only looks like a session
 
 (ert-deftest ecc-restore-test-a-tab-or-a-reader-does-not-empty-the-file-at-exit ()
@@ -566,7 +551,6 @@ restored session wins over an idle one."
   (declare (indent 0))
   `(let ((was tab-bar-mode)
          (tabs-was (frame-parameter nil 'ecc-space-tabs))
-         (ecc-use-spaces t)
          (ecc-space--used nil)
          (ecc-space--implicit nil)
          (ecc-space--ensuring-parent nil)

@@ -588,7 +588,6 @@ left open on a Space with nowhere to go."
   (ecc-worktree-test--with-directory directory
     (ecc-worktree-test--repository directory)
     (let* ((ecc-worktree-directory ".claude/worktrees")
-           (ecc-use-spaces t)
            (ecc--sessions (make-hash-table :test #'equal))
            (ecc--session-order nil)
            (ecc-window--project-root-cache (make-hash-table :test #'equal))
@@ -600,15 +599,7 @@ left open on a Space with nowhere to go."
         (ecc-worktree-test--with-answer t
           (ecc-remove-worktree path))
         (should (equal forgotten (list (cons path t)))))
-      (should-not (file-directory-p path))
-      ;; Under `classic\=' there is no Space and `ecc-space\=' is not loaded.
-      (let ((ecc-use-spaces nil)
-            (path (ecc-worktree-create directory "feat/y")))
-        (cl-letf (((symbol-function 'ecc-space-forget)
-                   (lambda (_root) (error "No Space under classic"))))
-          (ecc-worktree-test--with-answer t
-            (ecc-remove-worktree path)))
-        (should-not (file-directory-p path))))))
+      (should-not (file-directory-p path)))))
 
 (ert-deftest ecc-worktree-test-offer-counts-the-open-buffers ()
   "A buffer visiting the worktree is counted in the question, not killed."
@@ -773,7 +764,6 @@ not installed unless BODY says otherwise."
            (ecc--sessions (make-hash-table :test #'equal))
            (ecc--session-order nil)
            (ecc-window--project-root-cache (make-hash-table :test #'equal))
-           (ecc-use-spaces nil)
            ;; Without a calling session the repository is where Emacs is.
            (default-directory ,var)
            (ecc-review-gh-executable "ecc-worktree-test-no-such-gh")
@@ -1176,13 +1166,13 @@ The model is told what was removed before it, and the error is logged."
                                     (ecc-worktree-mcp-list)))))))))
 
 (ert-deftest ecc-worktree-test-mcp-remove-closes-the-space ()
-  "Under Spaces the Space is closed while the directory is still there.
-Under `classic' nothing reaches `ecc-space'."
+  "The Space is closed while the directory is still there.
+A worktree with no Space is removed without a word about one."
   (skip-unless (executable-find "git"))
   (ecc-worktree-test--with-repository directory
     (let ((path (ecc-worktree-test--finished directory "feat/x"))
           (forgotten nil))
-      (let ((ecc-use-spaces t))
+      (progn
         (cl-letf (((symbol-function 'ecc-space-at-p) (lambda (_root) t))
                   ((symbol-function 'ecc-space-forget)
                    (lambda (root)
@@ -1193,10 +1183,7 @@ Under `classic' nothing reaches `ecc-space'."
       (should (equal (file-truename (caar forgotten)) (file-truename path)))
       (should-not (file-directory-p path))
       (let ((path (ecc-worktree-test--finished directory "feat/y")))
-        (cl-letf (((symbol-function 'ecc-space-at-p)
-                   (lambda (_root) (error "No Space under classic")))
-                  ((symbol-function 'ecc-space-forget)
-                   (lambda (_root) (error "No Space under classic"))))
+        (cl-letf (((symbol-function 'ecc-space-at-p) (lambda (_root) nil)))
           (let ((line (car (ecc-worktree-test--remove path))))
             (should (string-match-p "\\`removed " line))
             (should-not (string-match-p "Space" line))))))))
@@ -1218,15 +1205,15 @@ Under `classic' nothing reaches `ecc-space'."
   changes: none
   merged: yes -- its tip is in origin/develop
   sessions: caller (idle)
+  Space: [a-z]+
   removable: yes" text))
         (should (string-match-p "feat-dirty/ (branch feat/dirty)
   changes: 1 file uncommitted or untracked
   merged: no -- its tip is in origin/develop, but no commit was made on feat/dirty; gh was not asked, the worktree being refused for another reason
   sessions: none
-  removable: no -- dirty: 1 file uncommitted or untracked" text))
-        ;; The Space line is there only when there are Spaces.
-        (should-not (string-match-p "Space:" text)))
-      (let ((ecc-use-spaces t))
+  Space: no
+  removable: no -- dirty: 1 file uncommitted or untracked" text)))
+      (progn
         (cl-letf (((symbol-function 'ecc-space-at-p)
                    (lambda (root) (string-match-p "feat-done" root))))
           (let ((text (ecc-worktree-mcp-list)))

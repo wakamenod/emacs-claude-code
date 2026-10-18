@@ -45,7 +45,6 @@ when BODY runs, and everything is put back afterwards."
           (ecc-space--used nil)
           (ecc-sidebar--collapsed nil)
           (ecc-sidebar-sessions-sort 'spaces)
-          (ecc-use-spaces nil)
           (ecc-visual-enable-spinner nil)
           (sessions (mapcar (lambda (entry)
                               (ecc-model-create-session
@@ -272,56 +271,6 @@ says nothing the second time."
     (should (string-match-p "^· \\[.\\] project-one" (ecc-sidebar-test--text)))))
 
 ;;;; The keys
-
-(ert-deftest ecc-sidebar-test-return-goes-there ()
-  "RET on a session shows it; RET on a Space goes to the project."
-  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
-                                    ("two" . ,ecc-sidebar-test--two))
-    (let ((selected nil)
-          (focused nil)
-          (tabbed nil))
-      (cl-letf (((symbol-function 'ecc-window-select-session)
-                 (lambda (session) (setq selected session)))
-                ;; The real `ecc-space-select' runs, so that what is
-                ;; tested is the branch it takes.
-                ((symbol-function 'ecc-focus-project)
-                 (lambda (root &rest _) (setq focused root)))
-                ((symbol-function 'ecc-space--select-tab)
-                 (lambda (space) (setq tabbed (ecc-space-root space)))))
-        ;; A session row.
-        (ecc-sidebar-test--goto "· one")
-        (ecc-sidebar-visit)
-        (should (eq selected (car sessions)))
-        ;; A Space row, under `classic': the old way of focusing, and
-        ;; no tab made.
-        (ecc-sidebar-test--goto "project-two")
-        (ecc-sidebar-visit)
-        (should (equal focused ecc-sidebar-test--two))
-        (should-not tabbed)
-        ;; And under `spaces': its tab, and nothing focused.
-        (setq focused nil)
-        (let ((ecc-use-spaces t))
-          (ecc-sidebar-test--goto "project-one")
-          (ecc-sidebar-visit))
-        (should (equal tabbed ecc-sidebar-test--one))
-        (should-not focused)))))
-
-(ert-deftest ecc-sidebar-test-a-number-does-what-return-does ()
-  "The number keys take the same path as RET, layout and all.
-Under `classic' pressing 2 used to turn the tab bar on and make a tab,
-where RET on the same row focused the project."
-  (ecc-sidebar-test--with-sidebar `(("one" . ,ecc-sidebar-test--one)
-                                    ("two" . ,ecc-sidebar-test--two))
-    (let ((focused nil)
-          (tabbed nil))
-      (cl-letf (((symbol-function 'ecc-focus-project)
-                 (lambda (root &rest _) (setq focused root)))
-                ((symbol-function 'ecc-space--select-tab)
-                 (lambda (space) (setq tabbed (ecc-space-root space))))
-                ((symbol-function 'this-command-keys) (lambda () "1")))
-        (ecc-sidebar-jump)
-        (should (equal focused (ecc-space-root (car (ecc-space-list)))))
-        (should-not tabbed)))))
 
 (ert-deftest ecc-sidebar-test-n-and-p-skip-what-is-not-a-row ()
   "Moving passes over the headings and the git lines."

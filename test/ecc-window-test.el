@@ -17,18 +17,11 @@
 
 (defmacro ecc-window-test--with-sessions (first second &rest body)
   "Run BODY with two registered sessions bound to FIRST and SECOND.
-They live in different projects; the second is the most recently used.
-
-`ecc-use-spaces\=' is off throughout this file: what it tests is the
-window roles and the focusing built on them, which is the arrangement
-that setting turns off.  The Spaces have `ecc-space-test\=' to
-themselves."
+They live in different projects; the second is the most recently used."
   (declare (indent 2))
   `(let* ((ecc-test-sent nil)
-          (ecc-use-spaces nil)
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
-          (ecc-window--last-sub nil)
           (ecc-window--last-source-buffer nil)
           (,first (ecc-model-create-session
                    :name "one" :project-root "/tmp/project-one/"))
@@ -149,126 +142,7 @@ because only one of them moves: what it does to the other is the bug."
     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "  ")))
       (should-not (ecc-window-read-session-name "/tmp/project-one/")))))
 
-;;;; Roles and hiding
-
-(defmacro ecc-window-test--with-frame (roomy &rest body)
-  "Run BODY with a frame that has room for a third window when ROOMY.
-The frame is not really resized: `set-frame-height' does not reach
-`frame-height' in batch, so the threshold is moved instead, which is
-the thing being tested anyway.  Any session window BODY opened is taken
-down again."
-  (declare (indent 1))
-  `(let ((ecc-window--last-sub nil)
-         (ecc-window-large-frame-min-height
-          (if ,roomy 1 (1+ (frame-height)))))
-     (unwind-protect (progn ,@body)
-       (dolist (window (window-list nil 'no-minibuffer))
-         (when (and (window-parameter window 'ecc-window-role)
-                    (not (eq window (frame-root-window window))))
-           (delete-window window))))))
-
-(ert-deftest ecc-window-test-a-tall-frame-has-three-roles ()
-  "A frame with the height to spare gets a third window."
-  (let ((ecc-window-large-frame-min-height (frame-height)))
-    (should (ecc-window-large-frame-p))
-    (should (equal (ecc-window-available-roles) '(main sub-1 sub-2))))
-  (let ((ecc-window-large-frame-min-height (1+ (frame-height))))
-    (should-not (ecc-window-large-frame-p))
-    (should (equal (ecc-window-available-roles) '(main sub-1))))
-  ;; The constant is not to be eaten by the roles that are handed out.
-  (should (equal ecc-window-roles '(main sub-1 sub-2))))
-
-(ert-deftest ecc-window-test-roles-fill-then-alternate ()
-  "Sessions fill the roles in order, then take the subs in turn.
-Two sessions are not enough to see this: the fourth is the first one
-that has to displace somebody."
-  (ecc-window-test--with-sessions one two
-    (ecc-window-test--with-frame t
-      (let ((three (ecc-model-create-session
-                    :name "three" :project-root "/tmp/project-three/"))
-            (four (ecc-model-create-session
-                   :name "four" :project-root "/tmp/project-four/"))
-            (five (ecc-model-create-session
-                   :name "five" :project-root "/tmp/project-five/")))
-        (unwind-protect
-            (progn
-              (should (eq (ecc-window-role-for one) 'main))
-              (ecc-display-session one)
-              (should (eq (ecc-window-role-for two) 'sub-1))
-              (ecc-display-session two)
-              (should (eq (ecc-window-role-for three) 'sub-2))
-              (ecc-display-session three)
-              ;; Every role is taken now, so the subs come round in turn
-              ;; and `main' is left where it is.
-              (should (eq (ecc-window-role-for four) 'sub-1))
-              (ecc-display-session four)
-              (should (eq (ecc-window--session-role four) 'sub-1))
-              (should (eq (ecc-window-role-for five) 'sub-2))
-              (ecc-display-session five)
-              (should (eq (ecc-window--session-role five) 'sub-2))
-              ;; `main' was left alone the whole way through.
-              (should (eq (ecc-window--session-role one) 'main))
-              ;; A session already on the screen keeps the window it is in.
-              (should (eq (ecc-window-role-for one) 'main))
-              (should (eq (ecc-window-role-for four) 'sub-1)))
-          (dolist (session (list three four five))
-            (ecc-test-cleanup-session session)
-            (ecc-model-remove-session session)))))))
-
-(ert-deftest ecc-window-test-a-short-frame-keeps-to-two-windows ()
-  "Without the height for a third window the subs are all one."
-  (ecc-window-test--with-sessions one two
-    (ecc-window-test--with-frame nil
-      (let ((three (ecc-model-create-session
-                    :name "three" :project-root "/tmp/project-three/")))
-        (unwind-protect
-            (progn
-              (ecc-display-session one)
-              (ecc-display-session two)
-              (should (eq (ecc-window-role-for three) 'sub-1))
-              (ecc-display-session three)
-              ;; The third session took the window the second was in.
-              (should-not (ecc-window-session-visible-p two))
-              (should (ecc-window-session-visible-p three)))
-          (ecc-test-cleanup-session three)
-          (ecc-model-remove-session three))))))
-
-(ert-deftest ecc-window-test-main-is-filled-again-when-it-falls-empty ()
-  "A role nobody holds is the first one the next session takes."
-  (ecc-window-test--with-sessions one two
-    (ecc-window-test--with-frame t
-      (ecc-display-session one)
-      (should (eq (ecc-window--session-role one) 'main))
-      (ecc-window-hide-session one)
-      (should (eq (ecc-window-role-for two) 'main)))))
-
-(ert-deftest ecc-window-test-a-side-window-keeps-its-dedication ()
-  "Switching what a session window shows leaves it a side window.
-`switch-to-buffer' drops the `side' dedication, and an undedicated side
-window is the next one `display-buffer' takes over."
-  (ecc-window-test--with-sessions one two
-    (ecc-window-test--with-frame t
-      (ecc-display-session one)
-      (let ((window (ecc-window--role-window 'main)))
-        (should (eq (window-dedicated-p window) 'side))
-        (with-selected-window window
-          (switch-to-buffer (ecc-session-ensure-buffer two)))
-        (should-not (window-dedicated-p window))
-        (ecc-window-repair-side-windows)
-        (should (eq (window-dedicated-p window) 'side))))))
-
-(ert-deftest ecc-window-test-repair-is-installed-with-a-role ()
-  "The dedication watch goes on with the first session window given a role.
-Not before: loading the package puts nothing on the window hooks, and
-with the Spaces, which give no window a role, it never goes on."
-  (ecc-test-with-global-hooks '(window-buffer-change-functions)
-    (ecc-window-test--with-sessions one two
-      (ecc-window-test--with-frame t
-        (should-not (memq #'ecc-window-repair-side-windows
-                          (default-value 'window-buffer-change-functions)))
-        (ecc-display-session one)
-        (should (memq #'ecc-window-repair-side-windows
-                      (default-value 'window-buffer-change-functions)))))))
+;;;; Tabs and hiding
 
 (defmacro ecc-window-test--with-tabs (tabs &rest body)
   "Run BODY with TABS as the `tabs' frame parameter, putting it back after.
@@ -282,7 +156,7 @@ up here rather than a tab bar opened."
 
 (ert-deftest ecc-window-test-layout-key-is-per-tab ()
   "Two tabs answer with two keys, with the bar shown or not.
-`tab-bar-show' nil is a supported way to run `spaces', so what is kept
+`tab-bar-show' nil is a supported way to run the Spaces, so what is kept
 per tab -- the zoom of `ecc-space-zoom' -- has to stay apart there too."
   (require 'tab-bar)
   (ecc-window-test--with-tabs '((tab (name . "first"))
@@ -424,87 +298,15 @@ compilation log are not the source a project should come back to."
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest ecc-window-test-source-window-skips-the-session-windows ()
-  "The source belongs in a window that is neither a side window nor ours.
-`window-main-window' is no use: with a third session window open the
+  "The source belongs in the widest window that is not a side window.
+`window-main-window' is no use: with the windows of a layout open the
 main area is split and what comes back is the internal window."
-  (ecc-window-test--with-sessions one two
-    (ecc-window-test--with-frame t
-      (ecc-display-session one)
-      (ecc-display-session two)
-      (let ((window (ecc-window--source-window)))
-        (should (window-live-p window))
-        (should-not (window-parameter window 'ecc-window-role))
-        (should-not (window-parameter window 'window-side))))))
-
-(ert-deftest ecc-window-test-focus-project-moves-rather-than-copies ()
-  "A session dealt into another role leaves the window it came from.
-The roles are dealt out again from nothing, so a session that already
-had a window used to be drawn in both of them and the frame held the
-same transcript twice."
-  (ecc-window-test--with-projects '("/tmp/project-one/")
-    (ecc-window-test--with-sessions one _two
-      (let ((deep (ecc-model-create-session
-                    :name "deep" :project-root "/tmp/project-one/src/"))
-            (taken nil)
-            (placed nil))
-        (unwind-protect
-            (cl-letf (((symbol-function 'ecc-window-session-visible-p)
-                       (lambda (&rest _) t))
-                      ((symbol-function 'ecc-window-hide-session)
-                       (lambda (session) (push session taken)))
-                      ((symbol-function 'ecc-window-available-roles)
-                       (lambda (&optional _frame) ecc-window-roles))
-                      ((symbol-function 'ecc-display-session-in-role)
-                       (lambda (session role) (push (cons session role) placed)))
-                      ((symbol-function 'ecc-window--focus-source)
-                       (lambda (&rest _) nil)))
-              (ecc-focus-project "/tmp/project-one/")
-              ;; Both sessions of the project are taken down before
-              ;; either is put back, so neither is left behind in the
-              ;; role it used to have.  The third is the other project,
-              ;; which is taken down because it is being hidden.
-              (should (equal (sort (mapcar #'ecc-session-name taken) #'string<)
-                             '("deep" "one" "two")))
-              (should (equal (mapcar #'cdr (reverse placed)) '(main sub-1)))
-              ;; And the two of this project are the ones back on the
-              ;; screen, most recently used in the main window.
-              (should (equal (mapcar (lambda (entry)
-                                       (ecc-session-name (car entry)))
-                                     (reverse placed))
-                             '("deep" "one"))))
-          (ecc-test-cleanup-session deep)
-          (ecc-model-remove-session deep))))))
-
-(ert-deftest ecc-window-test-focus-project-hides-the-others ()
-  "Focusing a project takes the other projects off the screen, and no more.
-Nothing is killed and no process is stopped: focusing that project is
-what brings its windows back."
-  (ecc-window-test--with-projects '("/tmp/project-one/" "/tmp/project-two/")
-    (ecc-window-test--with-sessions one two
-      (let ((placed nil)
-            (hidden nil)
-            (visible (list one two)))
-        (cl-letf (((symbol-function 'ecc-window-session-visible-p)
-                   (lambda (session &optional _frame) (memq session visible)))
-                  ((symbol-function 'ecc-window-hide-session)
-                   (lambda (session) (push session hidden)
-                     (setq visible (delq session visible))))
-                  ((symbol-function 'ecc-window-available-roles)
-                   (lambda (&optional _frame) ecc-window-roles))
-                  ((symbol-function 'ecc-display-session-in-role)
-                   (lambda (session role) (push (cons session role) placed)))
-                  ((symbol-function 'ecc-window--focus-source)
-                   (lambda (&rest _) nil)))
-          (ecc-focus-project "/tmp/project-one/")
-          ;; The other project is off the screen; this one comes down
-          ;; too, but only to be dealt out again.
-          (should (memq two hidden))
-          ;; And it is in the main window afterwards.
-          (should (equal placed (list (cons one 'main))))
-          ;; A project with no session is refused rather than emptying
-          ;; the frame.
-          (should-error (ecc-focus-project "/tmp/elsewhere/")
-                        :type 'user-error))))))
+  (ecc-window-test--with-sessions one _two
+    (ecc-display-session one)
+    (let ((window (ecc-window--source-window)))
+      (should (window-live-p window))
+      (should-not (window-parameter window 'window-side))
+      (should-not (ecc-window-buffer-session (window-buffer window))))))
 
 ;;;; Which session a command talks to
 
@@ -581,7 +383,7 @@ in the order they come out, in `offered'."
                            'group-function))
 
 (ert-deftest ecc-window-test-picker-groups-by-project ()
-  "Under `classic' the sessions are grouped under their project's name.
+  "Sessions of a project that is no worktree are grouped under its name.
 The order they come in is kept, most recently used first, and the
 groups come in the order their first session does."
   (ecc-window-test--with-sessions one two
@@ -609,12 +411,12 @@ groups come in the order their first session does."
         (ecc-test-cleanup-session three)))))
 
 (ert-deftest ecc-window-test-picker-groups-by-space ()
-  "Under `spaces' the group is the Space, and two of one name are told apart.
+  "The group is the Space, and two of one name are told apart.
 Two repositories that are both called `main' would carry the same
 title; the second one met gets `main<2>', the way its tab would."
   (ecc-window-test--with-sessions one two
     (require 'ecc-space)
-    (let ((ecc-use-spaces t))
+    (progn
       (cl-letf (((symbol-function 'ecc-space-of-root)
                  (lambda (root)
                    (make-ecc-space :key root :root root :name "main")))
@@ -630,7 +432,7 @@ title; the second one met gets `main<2>', the way its tab would."
   "A Space with a tab is grouped under the name of that tab."
   (ecc-window-test--with-sessions one two
     (require 'ecc-space)
-    (let ((ecc-use-spaces t))
+    (progn
       (cl-letf (((symbol-function 'ecc-space-of-root)
                  (lambda (root)
                    (make-ecc-space :key root :root root :name "main")))
@@ -651,8 +453,7 @@ takes the branch rather than the name of its tab.  Typing the name of
 the repository leaves the repository and its worktree."
   (ecc-window-test--with-sessions one two
     (require 'ecc-space)
-    (let* ((ecc-use-spaces t)
-           (three (ecc-model-create-session
+    (let* ((three (ecc-model-create-session
                    :name "three" :project-root "/tmp/project-three/"))
            (main (ecc-window-session-project one))
            (worktree (ecc-window-session-project two)))
@@ -690,8 +491,7 @@ and its worktree's under `app<2> › feat/x\=', so that typing `app<2>\='
 leaves both."
   (ecc-window-test--with-sessions one two
     (require 'ecc-space)
-    (let* ((ecc-use-spaces t)
-           (main (ecc-window-session-project one))
+    (let* ((main (ecc-window-session-project one))
            (worktree (ecc-window-session-project two)))
       (cl-letf (((symbol-function 'ecc-space-of-root)
                  (lambda (root)
@@ -712,8 +512,7 @@ leaves both."
   "A worktree whose repository has no session stays where it came."
   (ecc-window-test--with-sessions one two
     (require 'ecc-space)
-    (let ((ecc-use-spaces t)
-          (worktree (ecc-window-session-project one)))
+    (let ((worktree (ecc-window-session-project one)))
       (cl-letf (((symbol-function 'ecc-space-of-root)
                  (lambda (root)
                    (if (equal root worktree)
@@ -866,15 +665,14 @@ and with it which group comes first."
   "Run BODY with the sessions of BINDINGS and the selected window showing one.
 BINDINGS is a list of (VAR NAME ROOT); the first is the session the
 selected window shows, the last the most recently used.  The window
-being switched is the selected one, since it shows a session, which is
-how it is found with and without a role.  `completing-read' answers
+being switched is the selected one, since it shows a session.
+`completing-read' answers
 with the first label it is offered and records them all in `offered',
 and
 `ecc-window-select-session' records the session it was asked to show in
 `selected' rather than laying out a frame."
   (declare (indent 1))
   `(let* ((ecc-test-sent nil)
-          (ecc-use-spaces nil)
           (ecc--sessions (make-hash-table :test #'equal))
           (ecc--session-order nil)
           (offered nil)
@@ -973,28 +771,16 @@ user asked for."
       (call-interactively #'ecc-switch-session))
     (should (equal (ecc-window-test--offered-names offered) '("three" "two")))))
 
-(ert-deftest ecc-window-test-switch-elsewhere-under-classic-stays-here ()
-  "Under `classic' any session is put into this window, its project or not.
-There is no Space for another project's session to go to, and handing
-it to `ecc-window-select-session' would put it in a sub window instead."
-  (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
-                                 (three "three" "/tmp/project-one/")
-                                 (two "two" "/tmp/project-two/"))
-    (ecc-switch-session two)
-    (should-not selected)
-    (should (eq (window-buffer window) (ecc-session-buffer two)))))
-
 (ert-deftest ecc-window-test-switch-under-spaces-finds-the-selected-window ()
-  "Under `spaces' the window switched is the selected one, though it has no role.
-A Space's windows are ordinary windows, and looking for a role found
-none: the session already shown was offered again, a lone one was taken
-without asking, and every choice went out to `ecc-window-select-session'."
+  "The window switched is the selected one, an ordinary window of a Space.
+Looking for a window role there found none: the session already shown
+was offered again, a lone one was taken without asking, and every
+choice went out to `ecc-window-select-session'."
   (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
                                  (two "two" "/tmp/project-two/")
                                  (three "three" "/tmp/project-one/")
                                  (four "four" "/tmp/project-one/"))
-    (let ((ecc-use-spaces t))
-      (should-not (window-parameter window 'ecc-window-role))
+    (progn
       (should (eq (ecc-window--switch-target) window))
       (call-interactively #'ecc-switch-session)
       (should (equal (ecc-window-test--offered-names offered) '("four" "three")))
@@ -1003,34 +789,33 @@ without asking, and every choice went out to `ecc-window-select-session'."
       (should-not selected))))
 
 (ert-deftest ecc-window-test-switch-under-spaces-alone-says-so ()
-  "Under `spaces' a session alone in its project is refused, not taken again."
+  "A session alone in its project is refused, not taken again."
   (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
                                  (two "two" "/tmp/project-two/"))
-    (let ((ecc-use-spaces t))
+    (progn
       (should-error (call-interactively #'ecc-switch-session)
                     :type 'user-error)
       (should-not offered)
       (should-not selected))))
 
 (ert-deftest ecc-window-test-switch-under-spaces-goes-to-its-own-space ()
-  "Under `spaces' another project's session is shown in its own Space."
+  "Another project's session is shown in its own Space."
   (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
                                  (three "three" "/tmp/project-one/")
                                  (two "two" "/tmp/project-two/"))
-    (let ((ecc-use-spaces t))
+    (progn
       (ecc-switch-session two)
       (should (eq selected two))
       (should (eq (window-buffer window) (ecc-session-buffer one))))))
 
 (ert-deftest ecc-window-test-switch-under-spaces-selects-a-shown-session ()
-  "Under `spaces' a session another window already shows is selected there.
+  "A session another window already shows is selected there.
 Putting it into this window as well would stand the same transcript in
 two windows, which `ecc-tab-line-neighbour' takes care never to do."
   (ecc-window-test--with-switch ((one "one" "/tmp/project-one/")
                                  (three "three" "/tmp/project-one/")
                                  (four "four" "/tmp/project-one/"))
-    (let* ((ecc-use-spaces t)
-           (other (split-window window)))
+    (let* ((other (split-window window)))
       (unwind-protect
           (progn
             (set-window-buffer other (ecc-session-ensure-buffer three))
@@ -1068,22 +853,6 @@ two windows, which `ecc-tab-line-neighbour' takes care never to do."
             (should (ecc-window-session-visible-p session)))
         (kill-buffer review)
         (ecc-window-hide-session session)))))
-
-(ert-deftest ecc-window-test-review-can-hide-the-session ()
-  "`ecc-window-hide-on-review' takes the session windows away."
-  (ecc-test-with-fake-session session
-    (ecc-session-ensure-buffer session)
-    (let ((review (generate-new-buffer "*ecc-review-test*"))
-          (ecc-window-hide-on-review 'all)
-          (ecc-window-review-focus 'review))
-      (unwind-protect
-          (progn
-            (ecc-display-session session)
-            (should (ecc-window-session-visible-p session))
-            (ecc-window-display-review review session)
-            (should-not (ecc-window-session-visible-p session))
-            (should (eq (window-buffer (selected-window)) review)))
-        (kill-buffer review)))))
 
 (ert-deftest ecc-window-test-review-focus-can-stay-in-the-transcript ()
   "`ecc-window-review-focus' session leaves point in the transcript."
@@ -1170,11 +939,10 @@ Run once with the Spaces on and once with them off, by the test below."
     (let ((review (get-buffer-create "*ecc-review: test*")))
       (unwind-protect
           (progn
-            (let ((ecc-use-spaces nil))
+            (progn
               (ecc-window-test--quiet-cases session review))
             ;; With the Spaces on, and another tab beside the one showing.
-            (let ((ecc-use-spaces t)
-                  (was tab-bar-mode))
+            (let ((was tab-bar-mode))
               (unwind-protect
                   (progn
                     (tab-bar-mode 1)
