@@ -113,16 +113,13 @@ session running in the background does not grab the window.")
     (define-key map (kbd "C-c C-p") #'ecc-plan-set-mode)
     (define-key map (kbd "C-c C-n") #'ecc-plan-next-change)
     map)
-  ;; `C-c C-m' is written out, not \\[...]: nothing is bound to it, and
-  ;; the docstring says why.  checkdoc reports its second chord all the
-  ;; same.
+  ;; Nothing is bound to `C-c C-m': a terminal cannot tell it from
+  ;; `C-c RET'.
   "Keymap of `ecc-plan-mode\='.
 The plan is edited here, so a letter has to stay a letter and every
-command sits under \\`C-c C-\='.  Not \\`C-c <letter>\=': the Emacs Lisp
-manual reserves that for users.  \\`C-c C-m\=' is unusable as well,
-because a terminal cannot tell it from \\`C-c RET\='.  `a\=' adds a note
-and `r\=' removes it; `p\=' is the permission mode, as it is in
-`ecc-menu\='.")
+command sits under \\`C-c C-\=', away from the keys the Emacs Lisp
+manual reserves for users.  `a\=' adds a note and `r\=' removes it;
+`p\=' is the permission mode, as it is in `ecc-menu\='.")
 
 (define-derived-mode ecc-plan-mode ecc-plan--parent-mode "Claude-Plan"
   "Major mode of the buffer a plan is reviewed in.

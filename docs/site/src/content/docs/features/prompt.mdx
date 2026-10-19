@@ -33,7 +33,13 @@ A session buffer has the transcript at the top, the prompt region below a divide
 | `S-TAB` | Cycle the [permission mode](/emacs-claude-code/features/permissions/#permission-modes) |
 | `C-c ?` | Open the [menu](/emacs-claude-code/reference/menu/) |
 
-Every session shares one prompt history. `M-p` replaces the whole prompt; `C-c C-r` inserts the prompt you choose at point. A prompt sent while Claude is working waits in a queue, as does a turn started by Remote Control. The waiting prompts appear above the divider. `C-c C-q`, or `RET` on them or clicking them, opens the list, where `RET` takes a prompt back into the prompt region to edit, `d` drops it and `M-<up>` / `M-<down>` move it. The footer shows the permission mode and the model.
+Every session shares one prompt history. `M-p` replaces the whole prompt; `C-c C-r` inserts the prompt you choose at point. To keep the history across restarts, turn on `savehist-mode` and add this to your init:
+
+```elisp
+(add-to-list 'savehist-additional-variables 'ecc-prompt-history)
+```
+
+A prompt sent while Claude is working waits in a queue, as does a turn started by Remote Control. The waiting prompts appear above the divider. `C-c C-q`, or `RET` on them or clicking them, opens the list, where `RET` takes a prompt back into the prompt region to edit, `d` drops it and `M-<up>` / `M-<down>` move it. The footer shows the permission mode and the model.
 
 ### Suggestions
 
