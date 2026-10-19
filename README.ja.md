@@ -119,6 +119,12 @@ M-x package-vc-install RET https://github.com/wakamenod/emacs-claude-code RET
   (ecc-prompt-suggestions-enabled t))
 ```
 
+プロンプトの履歴（プロンプト領域の `M-p` / `M-n`）を再起動後も残すには、`savehist-mode` を有効にして init に次の行を加えます。
+
+```elisp
+(add-to-list 'savehist-additional-variables 'ecc-prompt-history)
+```
+
 その他の設定は[設定リファレンス](https://wakamenod.github.io/emacs-claude-code/ja/reference/configuration/) を参照してください。
 
 ## クイックスタート

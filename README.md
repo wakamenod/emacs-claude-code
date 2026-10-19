@@ -118,6 +118,13 @@ This is the configuration the author uses.
   (ecc-prompt-suggestions-enabled t))
 ```
 
+To keep the prompt history (`M-p` / `M-n` in the prompt region) across
+restarts, turn on `savehist-mode` and add this to your init:
+
+```elisp
+(add-to-list 'savehist-additional-variables 'ecc-prompt-history)
+```
+
 For all other settings, see the [configuration reference](https://wakamenod.github.io/emacs-claude-code/reference/configuration/).
 
 ## Quickstart

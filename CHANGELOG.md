@@ -11,6 +11,20 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.290**.
+
+### Changed
+
+- **Behaviour change.** ecc no longer adds `ecc-prompt-history` to
+  `savehist-additional-variables` when savehist is loaded. With
+  `savehist-mode` on, the prompt history (`M-p` / `M-n` in the prompt
+  region) is kept across restarts only once your init adds it:
+  `(add-to-list 'savehist-additional-variables 'ecc-prompt-history)`.
+  The history saved before the upgrade is read back once more at the
+  next start, and is dropped at the next save unless that line is there.
+
 ## [0.5.0] - 2026-10-18
 
 Verified against **Claude Code CLI 2.1.290**.
