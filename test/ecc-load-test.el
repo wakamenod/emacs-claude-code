@@ -381,8 +381,9 @@ Neither with savehist loaded first nor with it loaded after."
           (dolist (file (directory-files dir nil "\\`ecc.*\\.el\\'"))
             (unless (equal file "ecc-autoloads.el")
               (require (intern (file-name-base file)))))
+          ;; Loading savehist is what the old registration waited for;
+          ;; `savehist-mode' would read and write the user's history file.
           (require 'savehist)
-          (savehist-mode 1)
           (list ,savehist-first
                 (memq 'ecc-prompt-history savehist-additional-variables))))))))
 
