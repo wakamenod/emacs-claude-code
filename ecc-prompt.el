@@ -205,22 +205,17 @@ Returns where the region starts."
 
 (defvar ecc-prompt-history nil
   "Prompts sent from a prompt region, most recent first.
-Shared by every session and kept across restarts when `savehist-mode'
-is on.")
+Shared by every session.  To keep it across restarts, turn on
+`savehist-mode' and add this variable to
+`savehist-additional-variables' in your init:
+
+  (add-to-list \\='savehist-additional-variables \\='ecc-prompt-history)")
 
 (defvar-local ecc-prompt--history-index nil
   "How far back in `ecc-prompt-history' this buffer has walked.")
 
 (defvar-local ecc-prompt--history-draft nil
   "What the buffer held before the history walk started.")
-
-;; The one thing this package puts into a variable of somebody else's,
-;; and it puts its own history in a list the user has already asked to
-;; be saved: nothing is turned on here, and an Emacs without
-;; `savehist-mode' never loads this form at all.
-(with-eval-after-load 'savehist
-  (when (boundp 'savehist-additional-variables)
-    (add-to-list 'savehist-additional-variables 'ecc-prompt-history)))
 
 (defun ecc-prompt-history-add (text)
   "Put TEXT at the front of `ecc-prompt-history'."

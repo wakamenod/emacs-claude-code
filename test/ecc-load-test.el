@@ -366,6 +366,27 @@ functions are not ecc's, and a function of Emacs made them."
     (should (seq-find (lambda (call) (eq (car call) 'add-hook)) calls))
     (should-not (seq-filter #'ecc-load-test--ecc-call-p calls))))
 
+;; ecc does not register its prompt history with savehist: a user who
+;; wants it kept adds it to `savehist-additional-variables' themselves.
+(ert-deftest ecc-load-test-savehist-is-left-alone ()
+  "Loading ecc adds nothing to `savehist-additional-variables'.
+Neither with savehist loaded first nor with it loaded after."
+  (dolist (savehist-first '(t nil))
+    (should
+     (equal
+      (list savehist-first nil)
+      (ecc-load-test--run
+       `(let ((dir (file-name-directory (locate-library "ecc.el" t))))
+          (when ,savehist-first (require 'savehist))
+          (dolist (file (directory-files dir nil "\\`ecc.*\\.el\\'"))
+            (unless (equal file "ecc-autoloads.el")
+              (require (intern (file-name-base file)))))
+          ;; Loading savehist is what the old registration waited for;
+          ;; `savehist-mode' would read and write the user's history file.
+          (require 'savehist)
+          (list ,savehist-first
+                (memq 'ecc-prompt-history savehist-additional-variables))))))))
+
 (defun ecc-load-test--run (form)
   "Evaluate FORM in an Emacs of its own and return what it returns.
 That Emacs has ecc on its `load-path' and has loaded nothing of it, so

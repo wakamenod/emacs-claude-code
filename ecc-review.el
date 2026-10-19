@@ -1223,10 +1223,9 @@ changed stays open when its changes have gone."
                    "<remap> <undo>" "<remap> <undo-ignore-read-only>"))
       (define-key map (kbd key) #'ecc-review-read-only))
     map)
-  ;; The keys in the last paragraph are written out, not \\[...]: it is
-  ;; about those keys -- which ones the manual reserves and which ones
-  ;; `diff-mode' already has -- and a rebinding does not change that.
-  ;; checkdoc reports the second chord of `C-c C-c' all the same.
+  ;; The two chords in the last paragraph are \\[...] because checkdoc
+  ;; reports a key of more than one chord written out; { and } are not
+  ;; chords and stay as they are.
   "Keymap of `ecc-review-mode\='.
 The buffer is read-only, so a letter is free to be a command, and these
 come before `diff-mode-shared-map\=' and `diff-mode-read-only-map\='.
@@ -1241,8 +1240,8 @@ request read a commit at a time are not here: `ecc-review-files\=',
 map, below its own keys and above those of `diff-mode-map\=', so that a
 key bound here wins.
 
-Nothing here takes a \\`C-c <letter>\=' key: the Emacs Lisp manual
-reserves those for users.  \\`C-c C-c\=' and \\`C-c C-k\=' shadow
+\\<ecc-review-mode-map>Nothing here takes a key the Emacs Lisp manual
+reserves for users.  \\[ecc-review-send] and \\[ecc-review-quit] shadow
 `diff-mode\=', deliberately: finishing and aborting are what those two
 mean everywhere in Emacs.  So do { and }, which move between the
 comments here and between files in `diff-mode\=': N and P still do
