@@ -338,40 +338,55 @@ then hashes only the files that changed rather than all of them (25 ms
 against 43 ms over 206 files, measured 2026-09-15).  A repository with
 no commit needs no special case here; `git add\=' and `git write-tree\='
 want no HEAD."
+  (let ((index (ecc-git--snapshot-index root)))
+    (unwind-protect
+        (ecc-git--snapshot-tree
+         root
+         (if no-add
+             '(0 . "")
+           (ecc-git--with-index root index "add" "-A" "--"))
+         (lambda () (ecc-git--with-index root index "write-tree")))
+      (when (file-exists-p index) (delete-file index)))))
+
+(defun ecc-git--snapshot-index (root)
+  "Return a throwaway index file for a snapshot of ROOT.
+It is a copy of the repository\='s own index, for its stat cache, or a
+name with no file behind it when there is none to copy."
   (let ((index (make-temp-file "ecc-review-index"))
         (real (pcase (ecc-git-run root "rev-parse" "--git-path" "index")
                 (`(0 . ,output)
                  (expand-file-name (string-trim output) root)))))
-    (unwind-protect
-        (progn
-          (if (and real (file-readable-p real))
-              ;; With the time of the index, not the time of the copy.
-              ;; git re-reads a file whose cached stat is no older than the
-              ;; index that holds it -- racily clean, the case its stat
-              ;; cannot settle -- and trusts the stat otherwise.  A copy
-              ;; stamped now is newer than every stat in it, so nothing is
-              ;; racily clean any more and a file written in the same
-              ;; second as the last commit, to the same length, reads as
-              ;; unchanged and drops out of the review.  Measured on
-              ;; 2026-09-15 (macOS, git 2.x, one second of stat
-              ;; granularity): 7 misses in 900 runs of write-then-snapshot
-              ;; without the time, none in 900 with it.
-              (copy-file real index t t)
-            ;; git writes the index itself; an empty file is not one.
-            (delete-file index))
-          (pcase (if no-add
-                     '(0 . "")
-                   (ecc-git--with-index root index "add" "-A" "--"))
-            (`(0 . ,_)
-             (pcase (ecc-git--with-index root index "write-tree")
-               (`(0 . ,output)
-                (let ((tree (string-trim output)))
-                  (and (not (string-empty-p tree)) tree)))
-               (result (ecc-log "review" "write-tree failed in %s: %S" root result)
-                       nil)))
-            (result (ecc-log "review" "snapshot failed in %s: %S" root result)
-                    nil)))
-      (when (file-exists-p index) (delete-file index)))))
+    (if (and real (file-readable-p real))
+        ;; With the time of the index, not the time of the copy.
+        ;; git re-reads a file whose cached stat is no older than the
+        ;; index that holds it -- racily clean, the case its stat
+        ;; cannot settle -- and trusts the stat otherwise.  A copy
+        ;; stamped now is newer than every stat in it, so nothing is
+        ;; racily clean any more and a file written in the same
+        ;; second as the last commit, to the same length, reads as
+        ;; unchanged and drops out of the review.  Measured on
+        ;; 2026-09-15 (macOS, git 2.x, one second of stat
+        ;; granularity): 7 misses in 900 runs of write-then-snapshot
+        ;; without the time, none in 900 with it.
+        (copy-file real index t t)
+      ;; git writes the index itself; an empty file is not one.
+      (delete-file index))
+    index))
+
+(defun ecc-git--snapshot-tree (root added write-tree)
+  "Return the tree of a snapshot of ROOT, or nil.
+ADDED is what `git add' returned, and WRITE-TREE runs `git write-tree'
+when it succeeded."
+  (pcase added
+    (`(0 . ,_)
+     (pcase (funcall write-tree)
+       (`(0 . ,output)
+        (let ((tree (string-trim output)))
+          (and (not (string-empty-p tree)) tree)))
+       (result (ecc-log "review" "write-tree failed in %s: %S" root result)
+               nil)))
+    (result (ecc-log "review" "snapshot failed in %s: %S" root result)
+            nil)))
 
 (defun ecc-git-ensure-baseline (session)
   "Record what the working tree of SESSION holds now unless it is known.
@@ -395,6 +410,73 @@ under git while a session runs."
                                (or (ecc-session-project-root session)
                                    default-directory))))
               (ecc-git-snapshot root)))))
+
+(defun ecc-git--snapshot-async (root callback)
+  "Take `ecc-git-snapshot' of ROOT in the background.
+CALLBACK is called with the tree, or nil, once git is done.
+
+Only `git add' runs in the background: it opens every file whose stat
+the index does not vouch for, and an antivirus that scans each file
+opened made that 15 s on a repository of 5700 files, against 0.15 s
+once they had been scanned (2026-10-20, Defender and Jamf Protect on
+macOS).  `git write-tree' reads the index and the object store alone,
+and took 30 ms there."
+  (let ((index (ecc-git--snapshot-index root))
+        (output (generate-new-buffer " *ecc-git-snapshot*"))
+        (errors (generate-new-buffer " *ecc-git-snapshot-stderr*")))
+    (condition-case err
+        (let ((default-directory (file-name-as-directory root))
+              (process-environment
+               (cons (concat "GIT_INDEX_FILE=" index) process-environment)))
+          (make-process
+           :name "ecc-git-snapshot"
+           :command (list ecc-git-executable "add" "-A" "--")
+           :buffer output
+           :stderr errors
+           :connection-type 'pipe
+           :noquery t
+           :sentinel
+           (lambda (process _event)
+             (unless (process-live-p process)
+               (let ((added (cons (process-exit-status process)
+                                  (with-current-buffer errors
+                                    (buffer-string)))))
+                 (kill-buffer output)
+                 (kill-buffer errors)
+                 (funcall callback
+                          (unwind-protect
+                              (ecc-git--snapshot-tree
+                               root added
+                               (lambda ()
+                                 (ecc-git--with-index root index "write-tree")))
+                            (when (file-exists-p index)
+                              (delete-file index)))))))))
+      (file-error
+       (ecc-log "review" "git failed: %s" (error-message-string err))
+       (kill-buffer output)
+       (kill-buffer errors)
+       (when (file-exists-p index) (delete-file index))
+       (funcall callback nil)))))
+
+(defun ecc-git-start-baseline (session &optional then)
+  "Start taking the baseline of SESSION in the background.
+This is `ecc-git-ensure-baseline' without the wait, for the start of a
+session: the baseline is taken unless SESSION has one, and
+`ecc-session-baseline-pending' is set until git is done.  THEN, when
+non-nil, is called with SESSION at that moment.  Nothing is started,
+and THEN is not called, for a session that has a baseline, is taking
+one, or is outside git."
+  (unless (or (ecc-session-baseline session)
+              (ecc-session-baseline-pending session))
+    (when-let* ((root (ecc-git-root (or (ecc-session-project-root session)
+                                        default-directory))))
+      (setf (ecc-session-baseline-pending session) t)
+      (ecc-git--snapshot-async
+       root
+       (lambda (tree)
+         (setf (ecc-session-baseline session) tree
+               (ecc-session-baseline-pending session) nil)
+         (when then (funcall then session)))))))
 
 (provide 'ecc-git)
 

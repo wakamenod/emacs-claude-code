@@ -680,8 +680,9 @@ the CLI would run twice on the same recording."
   (ecc-session-ensure-buffer session)
   ;; A session resumed in the Emacs that started it keeps the baseline it
   ;; began with -- this restarts the CLI, not the work -- and one read
-  ;; back from a recording takes its first here.
-  (ecc-git-ensure-baseline session)
+  ;; back from a recording takes its first here, in the background as
+  ;; `ecc-start' takes it.
+  (ecc-git-start-baseline session #'ecc-proc-baseline-taken)
   (ecc-proc-start session #'ecc-dispatch t fork)
   ;; Noted after the start, which would otherwise be the one to forget it.
   (setf (alist-get 'fork-unsettled (ecc-session-progress session)) (and fork t))

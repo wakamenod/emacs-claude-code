@@ -1133,9 +1133,10 @@ history."
         ;; holds the text with its blocks already in it, so what was
         ;; attached belongs in the same message.
         (message "%s; queued at position %d%s"
-                 (if (ecc-model-remote-turn-p (ecc-session-current-turn session))
-                     "A turn started from Remote Control is running"
-                   "A turn is running")
+                 (cond ((ecc-model-remote-turn-p (ecc-session-current-turn session))
+                        "A turn started from Remote Control is running")
+                       ((ecc-session-current-turn session) "A turn is running")
+                       (t "The review baseline is being taken"))
                  outcome (ecc-prompt--attachment-report)))
       ;; Last, so that what became of the session is what is left on the
       ;; screen rather than the `Sent' of a prompt that has moved it.

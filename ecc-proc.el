@@ -710,20 +710,33 @@ arrive in between, since output is only read when Emacs waits for it."
   "Send TEXT to SESSION, or queue it while a turn is running.
 DRAFT is what the user typed, when TEXT was prepared from it; a queued
 prompt keeps it so that it can be taken back as it was written.
-Returns `sent' or the position in the queue."
-  (if (ecc-session-current-turn session)
+Returns `sent' or the position in the queue.
+
+A prompt is queued too while the review baseline is being taken: the
+CLI must not change a file before git has read what the tree held."
+  (if (or (ecc-session-current-turn session)
+          (ecc-session-baseline-pending session))
       (ecc-model-queue-input session text draft)
     (ecc-proc-send-user session text)
     'sent))
 
 (defun ecc-proc-drain-queue (session)
   "Send the next queued prompt of SESSION, if there is one.
-Nothing is sent while `ecc-proc-release\=' is stopping its CLI."
+Nothing is sent while `ecc-proc-release\=' is stopping its CLI, nor
+while the review baseline is being taken."
   (when-let* ((text (and (null (ecc-session-current-turn session))
+                        (not (ecc-session-baseline-pending session))
                         (not (memq session ecc-proc--releasing))
                         (ecc-model-pop-input session))))
     (ecc-proc-send-user session text)
     text))
+
+(defun ecc-proc-baseline-taken (session)
+  "Send the prompt SESSION queued while its baseline was being taken.
+For `ecc-git-start-baseline'; a CLI that has gone meanwhile is sent
+nothing."
+  (when (process-live-p (ecc-session-process session))
+    (ecc-proc-drain-queue session)))
 
 ;;;; The name
 

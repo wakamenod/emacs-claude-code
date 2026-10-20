@@ -11,6 +11,22 @@ Every entry names the Claude Code CLI it was verified against.  Nearly
 everything this package knows about the protocol belongs to one version of
 that CLI, and the CLI moves without anybody upgrading ecc.
 
+## [Unreleased]
+
+Verified against **Claude Code CLI 2.1.304**.
+
+### Fixed
+
+- Starting or resuming a session no longer freezes Emacs while git takes
+  the baseline the review diffs against. The `git add -A` behind it ran
+  in the foreground, and on a machine whose antivirus scans every file
+  git opens it took 15 s on a repository of 5700 files that otherwise
+  took 0.15 s. It runs in the background now. A prompt sent before it is
+  done waits in the queue, and the echo area says so: the CLI must not
+  change a file before git has read what the tree held. A review opened
+  in that moment is taken against `HEAD`, as for a session that has no
+  baseline.
+
 ## [0.5.0] - 2026-10-18
 
 Verified against **Claude Code CLI 2.1.290**.

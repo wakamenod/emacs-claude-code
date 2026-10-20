@@ -125,8 +125,9 @@ finding it later among all the others."
                              (ecc-git-session-name root)))))
     (ecc-session-ensure-buffer session)
     ;; What the tree held before the CLI could touch it: `ecc-review'
-    ;; diffs against this, so it is taken before the process starts.
-    (ecc-git-ensure-baseline session)
+    ;; diffs against this.  It is taken in the background, and the
+    ;; prompts sent meanwhile wait for it (`ecc-proc-send-prompt').
+    (ecc-git-start-baseline session #'ecc-proc-baseline-taken)
     (ecc-proc-start session #'ecc-dispatch)
     (ecc--enable-session-modes)
     (ecc-window-select-session session)

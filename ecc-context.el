@@ -300,8 +300,12 @@ region (2026-09-17)."
          (outcome (ecc-proc-send-prompt session text)))
     (if (eq outcome 'sent)
         (message "Sent to %s" (ecc-session-name session))
-      (message "%s: a turn is running; queued at position %d"
-               (ecc-session-name session) outcome))
+      (message "%s: %s; queued at position %d"
+               (ecc-session-name session)
+               (if (ecc-session-current-turn session)
+                   "a turn is running"
+                 "the review baseline is being taken")
+               outcome))
     session))
 
 ;;;###autoload

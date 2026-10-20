@@ -341,6 +341,37 @@ again the next time, as a project can be put under git while it runs."
         (should (equal (ecc-git-ensure-baseline session) first))
         (should-not (equal (ecc-git-snapshot (ecc-git-root directory)) first))))))
 
+(ert-deftest ecc-git-test-start-baseline ()
+  "The background baseline is the tree the waiting one would have been.
+It is pending until git is done, and the callback is told then; outside
+git nothing is started and nothing is called.  A session that has a
+baseline keeps it, as with `ecc-git-ensure-baseline'."
+  (skip-unless (executable-find "git"))
+  (ecc-git-test--with-directory directory
+    (let* ((session (ecc-session--make :project-root directory))
+           (called nil)
+           (then (lambda (s) (push s called))))
+      (ecc-git-start-baseline session then)
+      (should-not (ecc-session-baseline-pending session))
+      (ecc-git-test--repository directory)
+      (ecc-git-test--write (concat directory "new.txt") "new\n")
+      (ecc-git-start-baseline session then)
+      (should (ecc-session-baseline-pending session))
+      (let ((deadline (+ (float-time) 10)))
+        (while (and (ecc-session-baseline-pending session)
+                    (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should-not (ecc-session-baseline-pending session))
+      (should (equal called (list session)))
+      (should (equal (ecc-session-baseline session) (ecc-git-snapshot directory)))
+      (should (equal (ecc-git-test--git directory "show"
+                                        (concat (ecc-session-baseline session)
+                                                ":new.txt"))
+                     "new\n"))
+      (ecc-git-start-baseline session then)
+      (should-not (ecc-session-baseline-pending session))
+      (should (equal called (list session))))))
+
 (provide 'ecc-git-test)
 
 ;;; ecc-git-test.el ends here

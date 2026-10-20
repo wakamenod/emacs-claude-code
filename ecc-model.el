@@ -320,9 +320,12 @@ A prompt was queued, sent, taken back, dropped or moved.")
   tmp-dir
   baseline              ; git tree naming the working tree as it stood
                         ; when the session started, which `ecc-review'
-                        ; diffs against.  Taken by `ecc-review.el': the
+                        ; diffs against.  Taken by `ecc-git.el': the
                         ; model runs no process, and a session outside
                         ; git never has one
+  baseline-pending      ; non-nil while git is still taking the baseline
+                        ; (`ecc-git-start-baseline'); the prompts sent
+                        ; meanwhile wait in the input queue
   last-plan             ; text of the last plan reviewed
   plan-files            ; the files the CLI wrote the plans of this
                         ; session to, oldest first; ExitPlanMode names
