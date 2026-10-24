@@ -1431,6 +1431,240 @@ however often the pane is written, and forgotten with its turn."
       (should-error (ecc-review-talk-answer) :type 'user-error)
       (should (ecc-session-pending two)))))
 
+;;;; Going back through the turns
+
+(defun ecc-review-talk-test--exchange (session prompt answer)
+  "Have SESSION take PROMPT and answer it with ANSWER, in a turn that ends."
+  (ecc-model-begin-turn session prompt)
+  (ecc-review-talk-test--finish-text session (ecc-review-talk-test--say session answer) answer)
+  (ecc-model-finish-turn session nil))
+
+(defun ecc-review-talk-test--mode-line (control)
+  "Return the mode line of the reply pane of CONTROL, as text."
+  (with-current-buffer (ecc-review-talk-test--pane control)
+    (substring-no-properties (ecc-review-talk--mode-line))))
+
+(ert-deftest ecc-review-talk-test-turn-keys ()
+  ", and . in the panel, its windows and the pane; the diff review has none."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (should (eq (key-binding (kbd ",")) #'ecc-review-talk-previous-turn))
+      (should (eq (key-binding (kbd ".")) #'ecc-review-talk-next-turn))
+      (should (member "," ecc-review-direct-relayed-keys))
+      (should (member "." ecc-review-direct-relayed-keys))
+      (with-current-buffer (buffer-local-value 'ediff-buffer-B control)
+        (should (eq (key-binding (kbd ",")) #'ecc-review-direct-relay))
+        (should (eq (key-binding (kbd ".")) #'ecc-review-direct-relay)))
+      (should (string-match-p ", -Claude's reply to the turn before"
+                              ecc-review-ediff-long-help-message)))
+    (should (eq (lookup-key ecc-review-talk-mode-map (kbd ","))
+                #'ecc-review-talk-previous-turn))
+    (should (eq (lookup-key ecc-review-talk-mode-map (kbd "."))
+                #'ecc-review-talk-next-turn))
+    (with-current-buffer (ecc-review-talk-test--diff-review one)
+      (should-not (memq (key-binding (kbd ","))
+                        '(ecc-review-talk-previous-turn ecc-review-talk-next-turn)))
+      (should-not (memq (key-binding (kbd "."))
+                        '(ecc-review-talk-previous-turn ecc-review-talk-next-turn))))))
+
+(ert-deftest ecc-review-talk-test-step-through-the-turns ()
+  ", shows the turn before and . the one after, one exchange at a time.
+The first and the latest are as far as they go; reaching the latest,
+the pane follows it again.  The pane's own keys do the same."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (should-error (ecc-review-talk-previous-turn) :type 'user-error)
+      (ecc-review-talk-test--exchange one "First question" "Answer one.")
+      (ecc-review-talk-test--exchange one "Second question" "Answer two.")
+      (ecc-review-talk-test--exchange one "Third question" "Answer three.")
+      (let ((pane (ecc-review-talk-test--pane control)))
+        (should (string-search "Answer three." (ecc-review-talk-test--pane-text control)))
+        (should (string-search "turn 3/3" (ecc-review-talk-test--mode-line control)))
+        (should-error (ecc-review-talk-next-turn) :type 'user-error)
+        (ecc-review-talk-previous-turn)
+        (let ((text (ecc-review-talk-test--pane-text control)))
+          (should (string-prefix-p "› Second question\n" text))
+          (should (string-search "Answer two." text))
+          (should-not (string-search "Answer three." text)))
+        (should (string-search "turn 2/3" (ecc-review-talk-test--mode-line control)))
+        (with-current-buffer pane
+          (ecc-review-talk-previous-turn))
+        (should (string-search "Answer one." (ecc-review-talk-test--pane-text control)))
+        (should (string-search "turn 1/3" (ecc-review-talk-test--mode-line control)))
+        (should-error (ecc-review-talk-previous-turn) :type 'user-error)
+        (should (string-search "Answer one." (ecc-review-talk-test--pane-text control)))
+        (ecc-review-talk-next-turn)
+        (should (string-search "Answer two." (ecc-review-talk-test--pane-text control)))
+        (should (buffer-local-value 'ecc-review-talk--viewing pane))
+        (with-current-buffer pane
+          (ecc-review-talk-next-turn))
+        (should (string-search "Answer three." (ecc-review-talk-test--pane-text control)))
+        (should-not (buffer-local-value 'ecc-review-talk--viewing pane))
+        (should-error (ecc-review-talk-next-turn) :type 'user-error)))))
+
+(ert-deftest ecc-review-talk-test-an-earlier-turn-shows-its-start ()
+  "An earlier turn is shown from its prompt; back at the latest, the end."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-reply-height 6))
+      (ecc-review-talk-test--with-ediff one control
+        (let ((window (get-buffer-window (ecc-review-talk-test--pane control))))
+          (ecc-review-talk-test--long one)
+          (ecc-model-finish-turn one nil)
+          (ecc-review-talk-test--long one)
+          (should (ecc-review-talk-test--end-shown window))
+          (ecc-review-talk-previous-turn)
+          (should (equal (ecc-review-talk-test--top window) "› long"))
+          (ecc-review-talk-next-turn)
+          (should (ecc-review-talk-test--end-shown window)))))))
+
+(ert-deftest ecc-review-talk-test-an-earlier-turn-holds-until-the-next ()
+  "While an earlier turn is shown the latest neither writes nor moves the pane.
+Once another turn begins, the pane shows it and follows it again."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (ecc-review-talk-test--exchange one "First question" "Answer one.")
+      (ecc-model-begin-turn one "Second question")
+      (let ((node (ecc-review-talk-test--say one nil '("Streaming "))))
+        (ecc-review-talk-previous-turn)
+        (let* ((pane (ecc-review-talk-test--pane control))
+               (window (get-buffer-window pane))
+               (text (ecc-review-talk-test--pane-text control))
+               (start (window-start window))
+               (writes 0)
+               (write (symbol-function 'ecc-review-talk--write)))
+          (cl-letf (((symbol-function 'ecc-review-talk--write)
+                     (lambda (pane) (cl-incf writes) (funcall write pane))))
+            (ecc-model-append-stream one node "on and on.")
+            (ecc-review-talk-test--finish-text one node "Streaming on and on.")
+            (ecc-review-talk-test--call one "Read" '((file_path . "/tmp/x/a.txt")))
+            (ecc-review-talk-test--say one "More of it.")
+            (should (zerop writes)))
+          (should (equal (ecc-review-talk-test--pane-text control) text))
+          (should (= (window-start window) start))
+          (should (buffer-local-value 'ecc-review-talk--viewing pane))
+          (ecc-model-finish-turn one nil)
+          (ecc-model-begin-turn one "Third question")
+          (should-not (buffer-local-value 'ecc-review-talk--viewing pane))
+          (should (string-prefix-p "› Third question" (ecc-review-talk-test--pane-text control)))
+          (should (string-search "turn 3/3" (ecc-review-talk-test--mode-line control)))
+          (ecc-review-talk-test--say one "Answer three.")
+          (should (string-search "Answer three." (ecc-review-talk-test--pane-text control)))
+          (should (ecc-review-talk-test--end-shown window)))))))
+
+(ert-deftest ecc-review-talk-test-an-earlier-turn-lists-what-claude-waits-for ()
+  "A request of the latest turn is listed under an earlier one, and y answers it."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (ecc-review-talk-test--exchange one "First question" "Answer one.")
+      (ecc-model-begin-turn one "clean up")
+      (ecc-review-talk-previous-turn)
+      (ecc-test-add-request one "Bash" '((command . "rm -rf build")))
+      (let ((text (ecc-review-talk-test--pane-text control)))
+        (should (string-search "Answer one." text))
+        (should (string-search "Claude asks to use Bash:" text))
+        (should (string-search "y allows or denies it here" text)))
+      (cl-letf (((symbol-function #'read-multiple-choice) (lambda (&rest _) '(?y "allow"))))
+        (ecc-review-talk-answer))
+      (should-not (ecc-session-pending one))
+      (let ((text (ecc-review-talk-test--pane-text control)))
+        (should (string-search "Answer one." text))
+        (should-not (string-search "rm -rf build" text))))))
+
+(ert-deftest ecc-review-talk-test-m-quotes-the-turn-shown ()
+  "M on an earlier turn quotes it, the prompt saying which; on the latest, it does not.
+The quote is the prompt of that turn and Claude's own words in it, not
+its calls nor a subagent's words; the place follows it.  Sent, the new
+turn brings the pane back to the latest."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (ecc-model-begin-turn one "Why the cache?\n\n---\nWhere I am in the review: `a.txt`")
+      (let ((first (ecc-review-talk-test--say one "It saves a read.")))
+        (ecc-review-talk-test--finish-text one first "It saves a read."))
+      (let ((agent (ecc-review-talk-test--call one "Agent" '((description . "look")))))
+        (setf (ecc-node-type agent) 'agent)
+        (ecc-model-add-node one :type 'text :parent agent :status 'done
+                            :data '((text . "inside the agent"))))
+      (let ((second (ecc-review-talk-test--say one "Line one.\n\nLine two.")))
+        (ecc-review-talk-test--finish-text one second "Line one.\n\nLine two."))
+      (ecc-model-finish-turn one nil)
+      (ecc-review-talk-test--exchange one "Second question" "Answer two.")
+      (let* ((pane (ecc-review-talk-test--pane control))
+             (asked nil)
+             (send (lambda (answer)
+                     (cl-letf (((symbol-function #'read-string)
+                                (lambda (prompt &rest _) (setq asked prompt) answer)))
+                       (call-interactively #'ecc-review-talk-message)))))
+        ;; The latest: as before.
+        (funcall send "plain")
+        (should (equal asked "To test: "))
+        (should (equal (ecc-review-talk-test--opening
+                        (car (last (ecc-review-talk-test--prompts one))))
+                       "plain"))
+        (should-not (string-search ecc-review-talk-turn-label
+                                   (car (last (ecc-review-talk-test--prompts one)))))
+        (ecc-model-finish-turn one nil)
+        (ecc-review-talk-previous-turn)
+        (ecc-review-talk-previous-turn)
+        (should (string-search "It saves a read." (ecc-review-talk-test--pane-text control)))
+        (funcall send "is that still so?")
+        (should (equal asked "To test (about turn 1/3): "))
+        (let ((sent (car (last (ecc-review-talk-test--prompts one)))))
+          (should (equal sent
+                         (concat "is that still so?\n\n---\n" ecc-review-talk-turn-label
+                                 "\n\n" ecc-review-talk-turn-prompt-label " Why the cache?"
+                                 "\n\n" ecc-review-talk-turn-reply-label
+                                 "\n> It saves a read.\n>\n> Line one.\n>\n> Line two."
+                                 "\n\n---\n" ecc-review-talk-where-label " `a.txt`"))))
+        ;; The prompt went out as a turn of its own, which the pane shows.
+        (should-not (buffer-local-value 'ecc-review-talk--viewing pane))
+        (should (string-prefix-p "› is that still so?"
+                                 (ecc-review-talk-test--pane-text control)))))))
+
+(ert-deftest ecc-review-talk-test-a-long-turn-is-quoted-short ()
+  "Claude's words are cut at the limit and the prompt kept to a line."
+  (ecc-review-talk-test--with-sessions one _two
+    (let ((ecc-review-talk-turn-limit 10)
+          (turn (ecc-model-begin-turn one (concat "Ask\nthis " (make-string 300 ?x)))))
+      (ecc-review-talk-test--finish-text
+       one (ecc-review-talk-test--say one "0123456789abcdef") "0123456789abcdef")
+      (let ((block (ecc-review-talk--turn-block turn)))
+        (should (string-search "\n> 0123456789…" block))
+        (should-not (string-search "abc" block))
+        (should (string-search (concat ecc-review-talk-turn-prompt-label " Ask this x") block))
+        (should (string-search "x…\n" block)))
+      ;; A turn with nothing said in words quotes its prompt alone.
+      (let ((quiet (ecc-model-begin-turn one "Only calls")))
+        (ecc-review-talk-test--call one "Read" '((file_path . "/tmp/x/a.txt")))
+        (should (equal (ecc-review-talk--turn-block quiet)
+                       (concat "\n\n---\n" ecc-review-talk-turn-label "\n\n"
+                               ecc-review-talk-turn-prompt-label " Only calls")))))))
+
+(ert-deftest ecc-review-talk-test-the-pane-has-a-header-of-keys ()
+  "The header line of the pane says its keys, as many as the width takes."
+  (skip-unless (executable-find "git"))
+  (ecc-review-talk-test--with-sessions one _two
+    (ecc-review-talk-test--with-ediff one control
+      (let* ((pane (ecc-review-talk-test--pane control))
+             (window (get-buffer-window pane)))
+        (with-current-buffer pane
+          (should (equal header-line-format '(:eval (ecc-review-talk--header-line))))
+          (cl-letf (((symbol-function #'window-width) (lambda (&rest _) 80)))
+            (setq ecc-review-talk--header-cache nil)
+            (should (equal (substring-no-properties (ecc-review-talk--header-line window))
+                           " , . turns  u d scroll  M message  y answer  T tour  t next")))
+          (cl-letf (((symbol-function #'window-width) (lambda (&rest _) 40)))
+            (let ((text (substring-no-properties (ecc-review-talk--header-line window))))
+              (should (equal text " , . turns  u d scroll  M message"))))
+          (cl-letf (((symbol-function #'window-width) (lambda (&rest _) 6)))
+            (should (equal (substring-no-properties (ecc-review-talk--header-line window))
+                           " , . t"))))))))
+
 ;;;; Answering
 
 (ert-deftest ecc-review-talk-test-a-permission-is-answered-from-the-pane ()

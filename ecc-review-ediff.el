@@ -3374,7 +3374,7 @@ taken off the hook for good, so the error is logged and shown instead."
 ;;;;; The mode
 
 (defvar ecc-review-direct-relayed-keys
-  '("j" "{" "}" "a" "b" "s" "/" "T" "t" "M" "y" "u" "d" "l" "!" "?" "i" "q"
+  '("j" "{" "}" "a" "b" "s" "/" "T" "t" "M" "y" "u" "d" "," "." "l" "!" "?" "i" "q"
     "v" "V" "C-l" "|" "m" "h" "@" "*" "<" ">" "##" "#c" "#h" "#f" "]" "["
     "C-c C-c" "C-c C-k" "C-c C-a")
   "The keys of the control panel that the two windows of a review have too.
@@ -3465,6 +3465,7 @@ p,DEL -previous diff |     | -vert/horiz split   |  c -comment on the line/diff
   T -ask Claude for a tour of the review       t -the next stop of the tour
   M -say something to Claude                   y -answer what Claude asks
   u -scroll Claude's reply back                d -scroll it on again
+  , -Claude's reply to the turn before         . -to the turn after
 -------------------------------------------------------------------------------
   ] -the next commit of the pull request       [ -the previous one
   C-c C-a -send the comments of all its commits as one prompt
@@ -3476,7 +3477,8 @@ what you say, and moving point brings the other side along.  Here, c is
 about the whole difference and RET opens its file.  Both buffers are
 read-only: Claude changes the files, from the comments you send.
 C-c C-c sends those not sent yet and keeps the review open: the sent ones
-stay, dimmed, for Claude's replies."
+stay, dimmed, for Claude's replies.  While , shows an earlier turn in the
+reply pane, M quotes that turn with what you say."
   "What `?\\=' shows in the control panel of an ediff review.")
 
 (defun ecc-review-ediff--long-help-message ()
@@ -4108,6 +4110,10 @@ ediff lays out its windows; quitting puts back what was on the screen."
                (define-key ediff-mode-map (kbd "t") #'ecc-review-talk-next)
                (define-key ediff-mode-map (kbd "M") #'ecc-review-talk-message)
                (define-key ediff-mode-map (kbd "y") #'ecc-review-talk-answer)
+               ;; The earlier turns in the reply pane.  ediff binds
+               ;; neither , nor . (checked 2026-10-17).
+               (define-key ediff-mode-map (kbd ",") #'ecc-review-talk-previous-turn)
+               (define-key ediff-mode-map (kbd ".") #'ecc-review-talk-next-turn)
                ;; The commits of a pull request (`ecc-review-pr.el').
                ;; ediff binds neither ] nor [, and nothing under C-c
                ;; (checked 2026-10-07).

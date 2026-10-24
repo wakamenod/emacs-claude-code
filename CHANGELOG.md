@@ -15,6 +15,27 @@ that CLI, and the CLI moves without anybody upgrading ecc.
 
 Verified against **Claude Code CLI 2.1.290**.
 
+### Added
+
+- The reply pane of an ediff review goes back through the earlier turns
+  of its session. `,` shows the turn before the one shown and `.` the one
+  after, one exchange at a time -- the prompt and Claude's reply -- from
+  the review, its two windows and the pane itself; `,` on the first turn
+  and `.` on the latest say so. An earlier turn is shown from its start;
+  while it is, the latest streams on without writing or moving the pane,
+  and what Claude is waiting for is still listed under it for `y`. The
+  next turn to begin brings the pane back to the latest, which it follows
+  again. `M` on an earlier turn quotes it with what it sends, before the
+  region or the place: the turn's prompt on one line and Claude's own
+  words in it, cut at `ecc-review-talk-turn-limit` characters, under
+  `ecc-review-talk-turn-label`; the minibuffer prompt says which turn, as
+  `To NAME (about turn 3/7): `. The pane has a header line of the keys
+  typed for it in the review (`, . turns  u d scroll  M message  y answer
+  T tour  t next`, as many as its width takes), and its mode line says
+  which turn it shows, `turn 3/7`, in `warning` while it is an earlier
+  one. The review's `?` lists `,` and `.`; the diff review, which has no
+  pane, has neither.
+
 ### Changed
 
 - **Behaviour change.** ecc no longer adds `ecc-prompt-history` to
